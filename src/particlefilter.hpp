@@ -225,16 +225,6 @@ public:
 			return true;
 		}
 		
-		//Borrar
-		float x, y, z;
-		tf::StampedTransform mapTf;
-		m_tfListener.waitForTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), ros::Duration(1.0));
-		m_tfListener.lookupTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), mapTf);
-		x = mapTf.getOrigin().getX();
-		y = mapTf.getOrigin().getY();
-		z = mapTf.getOrigin().getZ();
-		mapTf.getBasis().getRPY(roll, pitch, yaw);
-		fprintf(pf, "%lf %f %f %f %f\n", ros::Time::now().toSec(), x, y, z, yaw);
 	
 		return false;
 	}
