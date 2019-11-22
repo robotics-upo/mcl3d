@@ -365,6 +365,9 @@ protected:
 		pcl::PointXYZ searchPoint;
 		std::vector<int> pointIdxNKNSearch(1);
 		std::vector<float> pointNKNSquaredDistance(1);
+		double count=0;
+		double percent;
+		double size=m_gridSizeX*m_gridSizeY*m_gridSizeZ;
 		for(int iz=0; iz<m_gridSizeZ; iz++)
 		{
 			for(int iy=0; iy<m_gridSizeY; iy++)
@@ -375,7 +378,9 @@ protected:
 					searchPoint.y = iy*m_resolution;
 					searchPoint.z = iz*m_resolution;
 					index = ix + iy*m_gridStepY + iz*m_gridStepZ;
-					
+					++count;
+					percent = count/size *100.0;
+					ROS_INFO_THROTTLE(0.5,"Progress: %lf %%", percent);	
 					if(m_kdtree.nearestKSearch(searchPoint, 1, pointIdxNKNSearch, pointNKNSquaredDistance) > 0)
 					{
 						dist = pointNKNSquaredDistance[0];
@@ -387,6 +392,7 @@ protected:
 						m_grid[index].dist = -1.0;
 						m_grid[index].prob =  0.0;
 					}
+
 				}
 			}
 		}
