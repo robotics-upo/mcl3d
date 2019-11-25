@@ -225,10 +225,7 @@ public:
 			return true;
 		}
 		
-<<<<<<< HEAD
 	
-=======
->>>>>>> 8ae66df0571d1b961f024a271dbe26be89b16fe2
 		return false;
 	}
 	
