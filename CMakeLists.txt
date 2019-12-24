@@ -93,7 +93,7 @@ pkg_check_modules( gsl REQUIRED gsl )
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
+  INCLUDE_DIRS include
 #  LIBRARIES stereo_processing
 #  CATKIN_DEPENDS roscpp rospy std_msgs
 #  DEPENDS system_lib
@@ -109,6 +109,7 @@ catkin_package(
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${gsl_INCLUDE_DIRS}
+  include
 )
 
 ## Declare a cpp library
@@ -117,7 +118,7 @@ include_directories(
 # )
 
 ## Declare a cpp executable
-add_executable(mcl3d_node src/mcl3d_node.cpp)
+add_executable(mcl3d_node src/mcl3d_node.cpp src/earthlocation.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes

@@ -293,11 +293,12 @@ protected:
 		}
 		
 		// Write grid general info 
-		fread(&m_gridSize, sizeof(int), 1, pf);
-		fread(&m_gridSizeX, sizeof(int), 1, pf);
-		fread(&m_gridSizeY, sizeof(int), 1, pf);
-		fread(&m_gridSizeZ, sizeof(int), 1, pf);
-		fread(&m_sensorDev, sizeof(float), 1, pf);
+		bool ret_val = true;
+		ret_val &= fread(&m_gridSize, sizeof(int), 1, pf) == 0;
+		ret_val &= fread(&m_gridSizeX, sizeof(int), 1, pf) == 0;
+		ret_val &= fread(&m_gridSizeY, sizeof(int), 1, pf) == 0;
+		ret_val &= fread(&m_gridSizeZ, sizeof(int), 1, pf) == 0;
+		ret_val &= fread(&m_sensorDev, sizeof(float), 1, pf) == 0;
 		m_gridStepY = m_gridSizeX;
 		m_gridStepZ = m_gridSizeX*m_gridSizeY;
 		
@@ -305,12 +306,12 @@ protected:
 		if(m_grid != NULL)
 			delete []m_grid;
 		m_grid = new gridCell[m_gridSize];
-		fread(m_grid, sizeof(gridCell), m_gridSize, pf);
+		ret_val &=fread(m_grid, sizeof(gridCell), m_gridSize, pf) == 0;
 		
 		// Close file
 		fclose(pf);
 		
-		return true;
+		return ret_val;
 	}
 	
 	void computePointCloud(void)
