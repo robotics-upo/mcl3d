@@ -19,6 +19,7 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl_conversions/pcl_conversions.h>
 
+#include <pcl/registration/icp.h>
 
 class Grid3d
 {
@@ -134,7 +135,7 @@ public:
 		}
 	}
 
-	~Grid3d(void)
+	~Grid3d()
 	{
 		if(m_octomap != NULL)
 			delete m_octomap;
@@ -163,13 +164,13 @@ public:
 			return 0;
 	}
   
-	void publishMapPointCloud(void)
+	void publishMapPointCloud()
 	{
 		m_pcMsg.header.stamp = ros::Time::now();
 		m_pcPub.publish(m_pcMsg);
 	}
 	
-	void publishGridSlice(void)
+	void publishGridSlice()
 	{
 		m_gridSliceMsg.header.stamp = ros::Time::now();
 		m_gridSlicePub.publish(m_gridSliceMsg);
@@ -178,6 +179,28 @@ public:
 	bool isIntoMap(float x, float y, float z)
 	{
 		return (x >= 0.0 && y >= 0.0 && z >= 0.0 && x <= m_maxX && y <= m_maxY && z <= m_maxZ);
+	}
+
+	Eigen::Matrix4f alignCloud(pcl::PointCloud<pcl::PointXYZ> &pc) {
+		Eigen::Matrix4f ret = Eigen::Matrix4f::Identity();
+		
+		//Initialize ICP
+		pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;	
+		icp.setMaximumIterations (100); //100
+		icp.setTransformationEpsilon (1e-9); //1e-9
+		icp.setMaxCorrespondenceDistance (0.2); //0.2
+		icp.setEuclideanFitnessEpsilon (0.05); //0.05
+		icp.setRANSACOutlierRejectionThreshold (0.002); //0.002
+
+		icp.setInputSource(m_cloud); 
+		icp.align(pc);
+
+		if (icp.hasConverged())
+		{
+			ret = icp.getFinalTransformation();
+		}
+
+		return ret;
 	}
 
 protected:
@@ -313,7 +336,7 @@ protected:
 		return true;
 	}
 	
-	void computePointCloud(void)
+	void computePointCloud()
 	{
 		// Get map parameters
 		double minX, minY, minZ;
@@ -337,13 +360,16 @@ protected:
 		}
 		m_cloud->width = i;
 		m_cloud->points.resize(i);
+
+		// Setup kdtree for ICP estimations
+		m_kdtree.setInputCloud(m_cloud);
 		
 		// Create the point cloud msg for publication
 		pcl::toROSMsg(*m_cloud, m_pcMsg);
 		m_pcMsg.header.frame_id = m_globalFrameId;
 	}
 	
-	void computeGrid(void)
+	void computeGrid()
 	{
 		// Alloc the 3D grid
 		m_gridSizeX = (int)(m_maxX*m_oneDivRes);

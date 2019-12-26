@@ -17,6 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
   nav_msgs
   range_msgs
+  tf_conversions
 )
 
 # GSL package

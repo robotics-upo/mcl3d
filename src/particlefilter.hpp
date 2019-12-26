@@ -25,6 +25,7 @@
 #include "grid3d.hpp"
 #include <time.h>
 #include <range_msgs/P2PRangeWithPose.h>
+#include <tf_conversions/tf_eigen.h>
 
 
 //Class definition
@@ -432,6 +433,62 @@ private:
 		publishParticles();
 	}
 
+	void calculateICPAndResample(const sensor_msgs::PointCloud2 &pc) {
+		// Transform PC 
+		sensor_msgs::PointCloud2 pc_tf;
+		tf::StampedTransform tf_base;
+		try {
+			m_tfListener.waitForTransform(m_globalFrameId, m_baseFrameId, ros::Time(0), ros::Duration(1.0));
+			m_tfListener.lookupTransform(m_globalFrameId, m_baseFrameId, ros::Time(0), tf_base);
+			
+		} catch (tf::TransformException ex)
+		{
+			ROS_ERROR("%s",ex.what());
+			return;
+		}
+
+		pcl_ros::transformPointCloud(m_baseFrameId, tf_base, pc, pc_tf);
+
+		pcl::PointCloud<pcl::PointXYZ> cloud;
+  		pcl::fromROSMsg (pc_tf, cloud);
+		Eigen::Matrix4f tf = m_grid3d.alignCloud(cloud);
+
+		// TODO: reweight and resample!!
+		Eigen::Affine3d tf_world_base;
+		tf::transformTFToEigen(tf_base, tf_world_base);
+		tf_world_base = tf_world_base * tf.cast<double>();
+
+		double x = tf_world_base.translation().x();
+		double y = tf_world_base.translation().y();
+		double z = tf_world_base.translation().z();
+		double roll,pitch,yaw;
+		pcl::getEulerAngles(tf_world_base, roll, pitch, yaw);
+
+		float pcl_dev = 0.5; // TODO: Another parameter
+		float gaussConst1 = 1./(pcl_dev*sqrt(2*M_PI));
+		float gaussConst2 = 1./(2*pcl_dev*pcl_dev);
+
+		double wt = 0.0;
+		for (auto p: m_p) {
+			p.w = (p.x - x) * (p.x - x);
+			p.w += (p.y - y) * (p.y - y);
+			p.w += (p.z - z) * (p.z - z);
+
+			// Distance in radians:
+			double dist_rad = (p.a - yaw) - std::floor((p.a - yaw)/M_PI)*M_PI;
+			p.w += dist_rad * dist_rad;
+			p.w = gaussConst1*exp(-p.w*p.w*gaussConst2);
+
+			wt += p.w;
+		}
+		wt = 1/wt; // Get the normalizing factor
+		for (auto p: m_p) {
+			p.w *= wt;
+		}
+
+		resample();
+	}
+
 	//!This function implements the PF prediction stage. Translation in X, Y and Z 
 	//!in meters and yaw angle incremenet in rad
 	bool predict(float delta_x, float delta_y, float delta_z, float delta_a)
@@ -459,7 +516,7 @@ private:
 	}
 	
 	// Update Particles with a pointcloud update
-	bool update(sensor_msgs::PointCloud2 &cloud)
+	bool update(const sensor_msgs::PointCloud2 &cloud)
 	{		
 		// Compensate for the current roll and pitch of the base-link
 		std::vector<pcl::PointXYZ> points;
@@ -472,9 +529,9 @@ private:
 		r00 = cp; 	r01 = sp*sr; 	r02 = cr*sp;
 		r10 =  0; 	r11 = cr;		r12 = -sr;
 		r20 = -sp;	r21 = cp*sr;	r22 = cp*cr;
-		sensor_msgs::PointCloud2Iterator<float> iterX(cloud, "x");
-		sensor_msgs::PointCloud2Iterator<float> iterY(cloud, "y");
-		sensor_msgs::PointCloud2Iterator<float> iterZ(cloud, "z");
+		sensor_msgs::PointCloud2ConstIterator<float> iterX(cloud, "x");
+		sensor_msgs::PointCloud2ConstIterator<float> iterY(cloud, "y");
+		sensor_msgs::PointCloud2ConstIterator<float> iterZ(cloud, "z");
 		points.resize(cloud.width);
 		for(int i=0; i<cloud.width; ++i, ++iterX, ++iterY, ++iterZ)
 		{
@@ -561,11 +618,16 @@ private:
 		if(m_nUpdates > m_resampleInterval)
 		{
 			m_nUpdates = 0;
+
 			resample();
+
+			// New: perform ICP from cloud to Obstacle Map and the PointCloud after the transform
+			calculateICPAndResample(cloud);
 		}
 
 		return true;
 	}
+	
 
 	//! Set the initial pose of the particle filter
 	void setInitialPose(tf::Pose initPose, float xDev, float yDev, float zDev, float aDev)
@@ -675,6 +737,8 @@ private:
 		// Compute the TF from odom to global
 		std::cout << "New TF:\n\t" << mx << ", " << my << ", " << mz << std::endl;
 		m_lastGlobalTf = tf::Transform(tf::Quaternion(0.0, 0.0, sin(ma*0.5), cos(ma*0.5)), tf::Vector3(mx, my, mz))*m_lastOdomTf.inverse();
+		// Publish current TF from odom to map
+		m_tfBr.sendTransform(tf::StampedTransform(m_lastGlobalTf, ros::Time::now(), m_globalFrameId, m_odomFrameId));
 
 		m_lastPose.pose.pose.position.x = mx;
 		m_lastPose.pose.pose.position.y = my;
