@@ -58,7 +58,7 @@ public:
 		float z;
 		std::vector<float> range;
 		float variance;
-		float getMeanRange(void)
+		float getMeanRange()
 		{
 			if(range.size() == 0)
 				return -1.0;
@@ -164,8 +164,9 @@ public:
 			m_rangeSub = m_nh.subscribe(m_inRangeTopic, 1, &ParticleFilter::rangeDataCallback, this);
 		
 		// Launch publishers
-		m_posesPub = m_nh.advertise<geometry_msgs::PoseArray>(node_name+"/particle_cloud", 1, true);
-		m_visPub = m_nh.advertise<visualization_msgs::Marker>(node_name+"/uav", 0);
+		m_posesPub = lnh.advertise<geometry_msgs::PoseArray>("particle_cloud", 1, true);
+		m_visPub = lnh.advertise<visualization_msgs::Marker>("uav", 0);
+		m_pose_cov_pub = lnh.advertise<geometry_msgs::PoseWithCovarianceStamped>("pose", 1);
 
 		// Launch updater timer
 		updateTimer = m_nh.createTimer(ros::Duration(1.0/m_updateRate), &ParticleFilter::checkUpdateThresholdsTimer, this);
@@ -192,14 +193,14 @@ public:
 	}
 
 	//!Default destructor
-	~ParticleFilter(void)
+	~ParticleFilter()
 	{
 		gsl_rng_free(m_randomValue);
 		fclose(pf);
 	}
 		
 	//! Check motion and time thresholds for AMCL update
-	bool checkUpdateThresholds(void)
+	bool checkUpdateThresholds()
 	{
 		// Publish current TF from odom to map
 		m_tfBr.sendTransform(tf::StampedTransform(m_lastGlobalTf, ros::Time::now(), m_globalFrameId, m_odomFrameId));
@@ -245,7 +246,7 @@ public:
 		return false;
 	}
 	
-	void publishParticles(void)
+	void publishParticles()
 	{
 		static int seq = 0;
 
@@ -425,7 +426,7 @@ private:
 		// Update time and transform information
 		m_lastOdomTf = odomTf;
 		m_doUpdate = false;
-		computeGlobalTf();
+		computeGlobalTfAndPose();
 						
 		// Publish particles
 		publishParticles();
@@ -553,7 +554,7 @@ private:
 		}	
 		
 		// Re-compute global TF according to new weight of samples
-		computeGlobalTf();
+		computeGlobalTfAndPose();
 
 		//Do the resampling if needed
 		m_nUpdates++;
@@ -609,7 +610,7 @@ private:
 			ROS_ERROR("%s",ex.what());
 			return;
 		}
-		computeGlobalTf();
+		computeGlobalTfAndPose();
 		m_doUpdate = false;
 		m_init = true;
 		
@@ -631,7 +632,7 @@ private:
 	}
 
 	//! resample the set of particules using low-variance sampling
-	int resample(void)
+	int resample()
 	{
 		int i, m;
 		float r, u, c, factor;
@@ -664,26 +665,33 @@ private:
 	}
 	
 	// Computes TF from odom to global frames
-	void computeGlobalTf(void)
+	void computeGlobalTfAndPose()
 	{				
 		// Compute mean value from particles
-		particle p;
-		p.x = 0.0;
-		p.y = 0.0;
-		p.z = 0.0;
-		p.a = 0.0;
-		p.w = 0.0;
-		for(int i=0; i<m_p.size(); i++)
-		{
-			p.x += m_p[i].w * m_p[i].x;
-			p.y += m_p[i].w * m_p[i].y;
-			p.z += m_p[i].w * m_p[i].z;
-			p.a += m_p[i].w * m_p[i].a;
-		}
-		
+		float mx, my, mz, ma, varx, vary, varz, vara;
+		computeVar(mx, my, mz, ma, varx, vary, varz, vara);
+
+			
 		// Compute the TF from odom to global
-		std::cout << "New TF:\n\t" << p.x << ", " << p.y << ", " << p.z << std::endl;
-		m_lastGlobalTf = tf::Transform(tf::Quaternion(0.0, 0.0, sin(p.a*0.5), cos(p.a*0.5)), tf::Vector3(p.x, p.y, p.z))*m_lastOdomTf.inverse();
+		std::cout << "New TF:\n\t" << mx << ", " << my << ", " << mz << std::endl;
+		m_lastGlobalTf = tf::Transform(tf::Quaternion(0.0, 0.0, sin(ma*0.5), cos(ma*0.5)), tf::Vector3(mx, my, mz))*m_lastOdomTf.inverse();
+
+		m_lastPose.pose.pose.position.x = mx;
+		m_lastPose.pose.pose.position.y = my;
+		m_lastPose.pose.pose.position.z = mz;
+		m_lastPose.pose.pose.orientation.x = m_lastPose.pose.pose.orientation.y = 0.0;
+		m_lastPose.pose.pose.orientation.z = sin(ma*0.5);
+		m_lastPose.pose.pose.orientation.w = cos(ma*0.5);
+
+		for (size_t i = 0; i < 36; i++)
+			m_lastPose.pose.covariance[i] = 0.0;
+
+		m_lastPose.pose.covariance[0] = varx;
+		m_lastPose.pose.covariance[7] = vary;
+		m_lastPose.pose.covariance[14] = varz;
+		m_lastPose.pose.covariance[35] = vara;
+
+		m_pose_cov_pub.publish(m_lastPose);
 	}
 
 	float computeRangeWeight(float x, float y, float z)
@@ -716,11 +724,20 @@ private:
 	
 	void computeDev(float &mX, float &mY, float &mZ, float &mA, float &devX, float &devY, float &devZ, float &devA)
 	{				
+		computeVar(mX, mY, mZ, mA, devX, devY, devZ, devA);
+		devX = sqrt(devX);
+		devY = sqrt(devY);
+		devZ = sqrt(devZ);
+		devA = sqrt(devA);
+	}
+
+	void computeVar(float &mX, float &mY, float &mZ, float &mA, float &varX, float &varY, float &varZ, float &varA)
+	{				
 		// Compute mean value from particles
-		devX = mX = 0.0;
-		devY = mY = 0.0;
-		devZ = mZ = 0.0;
-		devA = mA = 0.0;
+		varX = mX = 0.0;
+		varY = mY = 0.0;
+		varZ = mZ = 0.0;
+		varA = mA = 0.0;
 		for(int i=0; i<m_p.size(); i++)
 		{
 			mX += m_p[i].w * m_p[i].x;
@@ -730,15 +747,11 @@ private:
 		}
 		for(int i=0; i<m_p.size(); i++)
 		{
-			devX += m_p[i].w * (m_p[i].x-mX) * (m_p[i].x-mX);
-			devY += m_p[i].w * (m_p[i].y-mY) * (m_p[i].y-mY);
-			devZ += m_p[i].w * (m_p[i].z-mZ) * (m_p[i].z-mZ);
-			devA += m_p[i].w * (m_p[i].a-mA) * (m_p[i].a-mA);
+			varX += m_p[i].w * (m_p[i].x-mX) * (m_p[i].x-mX);
+			varY += m_p[i].w * (m_p[i].y-mY) * (m_p[i].y-mY);
+			varZ += m_p[i].w * (m_p[i].z-mZ) * (m_p[i].z-mZ);
+			varA += m_p[i].w * (m_p[i].a-mA) * (m_p[i].a-mA);
 		}
-		devX = sqrt(devX);
-		devY = sqrt(devY);
-		devZ = sqrt(devZ);
-		devA = sqrt(devA);
 	}
 	
 	//! Indicates if the filter was initialized
@@ -772,6 +785,7 @@ private:
 	double m_dTh, m_aTh, m_tTh;
 	tf::StampedTransform m_lastOdomTf;
 	tf::Transform m_lastGlobalTf;
+	geometry_msgs::PoseWithCovarianceStamped m_lastPose;
 	bool m_doUpdate;
 	double m_updateRate;
 	
@@ -794,7 +808,7 @@ private:
 	tf::TransformBroadcaster m_tfBr;
 	tf::TransformListener m_tfListener;
     ros::Subscriber m_pcSub, m_initialPoseSub, m_odomTfSub, m_rangeSub;
-	ros::Publisher m_posesPub, m_visPub;
+	ros::Publisher m_posesPub, m_visPub, m_pose_cov_pub;
 	ros::Timer updateTimer;
 	
 	//! Random number generator
