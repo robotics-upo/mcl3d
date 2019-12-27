@@ -10,21 +10,29 @@
 
   # Bag file
   <!-- <node name="bag_player" type="play" pkg="rosbag" args="$(arg bag_file) -s 0 -r 1.0 -l" /> -->
-    <arg name="initial_x" default="7.7"/>
-    <arg name="initial_y" default="15.7"/>
-    <arg name="initial_z" default="0.4"/>
-    <arg name="initial_a" default="01.52"/>
+  <arg name="initial_x" default="14.8"/>
+  <arg name="initial_y" default="14.8"/>
+  <arg name="initial_z" default="0.4"/>
+  <arg name="initial_a" default="2.5"/>
+  <arg name="base_frame_id" default="base_link"/>
+  <arg name="odom_frame_id" default="odom"/>
+  <arg name="global_frame_id" default="map"/>
+
+  <node pkg="odom_to_tf" type="odom_to_tf.py" name="odom_to_tf">
+    <param name="base_link" value="$(arg base_frame_id)"/>
+    <param name="odometry_frame" value="$(arg odom_frame_id)"/>
+  </node>
 
   # Launch MCL3D
-  <node name="mcl3d_node" type="mcl3d_node" pkg="mcl3d" >
+  <node name="mcl3d_node" type="mcl3d_node" pkg="mcl3d" output="screen">
     <remap from="/mcl3d_node/initial_pose" to="/initialpose"/>
     <param name="rate" value="10.0" />
-    <param name="in_cloud" value="/siar/os1_cloud_node_points" />
-    <param name="base_frame_id" value="siar/base_link" />
-    <param name="odom_frame_id" value="odom" />
-    <param name="global_frame_id" value="map" />
+    <param name="in_cloud" value="/os1_cloud_node/points" />
+    <param name="base_frame_id" value="$(arg base_frame_id)" />
+    <param name="odom_frame_id" value="$(arg odom_frame_id)" />
+    <param name="global_frame_id" value="$(arg global_frame_id)" />
 
-    <param name="map_path" value="$(find mcl3d)/maps/tower_full.bt" />
+    <param name="map_path" value="$(env HOME)/3dmaps/marseille/day1_first/octomap_full.bt" />
     <param name="publish_point_cloud" value="true" />
     <param name="sensor_dev" value="0.05" />
     <param name="cloud_voxel_size" value="0.1"/>
@@ -33,10 +41,10 @@
     <param name="min_particles" value="300" />
     <param name="max_particles" value="500" />
     
-    <param name="odom_x_mod" value="0.05" />
-    <param name="odom_y_mod" value="0.05" />
-    <param name="odom_z_mod" value="0.01" />
-    <param name="odom_a_mod" value="0.05" />
+    <param name="odom_x_mod" value="0.2" />
+    <param name="odom_y_mod" value="0.2" />
+    <param name="odom_z_mod" value="0.05" />
+    <param name="odom_a_mod" value="0.2" />
     
     <param name="resample_interval" value="0" />
     
@@ -55,7 +63,7 @@
     <param name="initial_a_dev" value="0.2" />
     <param name="initial_z_offset" value="0.5" />
     
-    <param name="use_range_only" value="true" />
+    <param name="use_range_only" value="false" />
     <param name="in_range" value="/localino_node/anchor/range" />
     <param name="range_only_tag" value="0x1436393435260290" />
     <param name="range_only_dev" value="0.1" />
