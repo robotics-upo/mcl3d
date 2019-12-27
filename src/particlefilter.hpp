@@ -16,6 +16,7 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <geometry_msgs/PoseArray.h>
 #include <nav_msgs/Odometry.h>
+#include <sensor_msgs/Imu.h>
 #include <vector>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
@@ -92,6 +93,10 @@ public:
 		
 		// Read range-only parameters
 		std::string id;
+		if(!lnh.getParam("use_imu", m_useImu))
+            m_useImu = true;  
+
+		m_roll = m_pitch = 0.0;
 		if(!lnh.getParam("use_range_only", m_useRageOnly))
             m_useRageOnly = false;  
         if(!lnh.getParam("in_range", m_inRangeTopic))
@@ -162,7 +167,9 @@ public:
 		m_initialPoseSub = m_nh.subscribe(node_name+"/initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
 		if(m_useRageOnly)
 			m_rangeSub = m_nh.subscribe(m_inRangeTopic, 1, &ParticleFilter::rangeDataCallback, this);
-		
+		if(m_useImu)
+			m_imuSub = m_nh.subscribe("imu", 1, &ParticleFilter::imuCallback, this);
+
 		// Launch publishers
 		m_posesPub = lnh.advertise<geometry_msgs::PoseArray>("particle_cloud", 1, true);
 		m_visPub = lnh.advertise<visualization_msgs::Marker>("uav", 0);
@@ -173,6 +180,10 @@ public:
 		
 		// Initialize TF from odom to map as identity
 		m_lastGlobalTf.setIdentity();
+
+		// Initialize last pose
+		m_lastPose.header.frame_id = m_globalFrameId;
+		m_lastPose.header.seq = 0;
 		
 		// Borrar
 		pf = fopen("/home/fernando/catkin_ws/mcl3d.txt", "w");
@@ -302,6 +313,16 @@ private:
 		setInitialPose(pose, m_initXDev, m_initYDev, m_initZDev, m_initADev);
 	}
 	
+	//! IMU callback
+	void imuCallback(const sensor_msgs::Imu::ConstPtr& msg) {
+		auto o = msg->orientation;
+		tf::Quaternion q;
+		tf::quaternionMsgToTF(o, q);
+		tf::Matrix3x3 M(q);
+		double yaw;
+		M.getRPY(m_roll, m_pitch, yaw);
+	}
+
 	//! Range-only data callback
 	void rangeDataCallback(const range_msgs::P2PRangeWithPose::ConstPtr& msg)
 	{
@@ -676,6 +697,9 @@ private:
 		std::cout << "New TF:\n\t" << mx << ", " << my << ", " << mz << std::endl;
 		m_lastGlobalTf = tf::Transform(tf::Quaternion(0.0, 0.0, sin(ma*0.5), cos(ma*0.5)), tf::Vector3(mx, my, mz))*m_lastOdomTf.inverse();
 
+		m_lastPose.header.seq++;
+		m_lastPose.header.stamp = ros::Time::now();
+
 		m_lastPose.pose.pose.position.x = mx;
 		m_lastPose.pose.pose.position.y = my;
 		m_lastPose.pose.pose.position.z = mz;
@@ -689,6 +713,7 @@ private:
 		m_lastPose.pose.covariance[0] = varx;
 		m_lastPose.pose.covariance[7] = vary;
 		m_lastPose.pose.covariance[14] = varz;
+		m_lastPose.pose.covariance[21] = m_lastPose.pose.covariance[28] = 0.01;
 		m_lastPose.pose.covariance[35] = vara;
 
 		m_pose_cov_pub.publish(m_lastPose);
@@ -766,6 +791,7 @@ private:
 	
 	//! Particles roll and pich (given by IMU)
 	double m_roll, m_pitch;
+	bool m_useImu;
 	
 	//! Number of particles in the filter
 	int m_maxParticles;
@@ -807,7 +833,7 @@ private:
 	ros::NodeHandle m_nh;
 	tf::TransformBroadcaster m_tfBr;
 	tf::TransformListener m_tfListener;
-    ros::Subscriber m_pcSub, m_initialPoseSub, m_odomTfSub, m_rangeSub;
+    ros::Subscriber m_pcSub, m_initialPoseSub, m_odomTfSub, m_rangeSub, m_imuSub;
 	ros::Publisher m_posesPub, m_visPub, m_pose_cov_pub;
 	ros::Timer updateTimer;
 	
