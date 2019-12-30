@@ -27,6 +27,10 @@
 #include <time.h>
 #include <range_msgs/P2PRangeWithPose.h>
 
+double ang_dist(double a, double a_) {
+	double dist_a = a - a_;
+	return dist_a - floor( (dist_a + M_PI) /M_PI*0.5)*M_PI*2.0;
+}
 
 //Class definition
 class ParticleFilter
@@ -90,6 +94,10 @@ public:
 			m_odomFrameId = "odom";	
 		if(!lnh.getParam("global_frame_id", m_globalFrameId))
 			m_globalFrameId = "map";	
+
+		if (!lnh.getParam("use_2d_odom", m_use_2d_odom)) {
+			m_use_2d_odom = true;
+		}
 		
 		// Read range-only parameters
 		std::string id;
@@ -129,6 +137,8 @@ public:
 			m_odomAMod = 0.2;
 		if(!lnh.getParam("odom_a_mod_min", m_odomAModMin))
 			m_odomAModMin = 0.05;
+		if(!lnh.getParam("odom_z_mod_min", m_odomZModMin))
+			m_odomZModMin = 0.05;
 		if(!lnh.getParam("initial_x", m_initX))
 			m_initX = 0.0;
 		if(!lnh.getParam("initial_y", m_initY))
@@ -164,7 +174,7 @@ public:
 		
 		// Launch subscribers
 		m_pcSub = m_nh.subscribe(m_inCloudTopic, 1, &ParticleFilter::pointcloudCallback, this);
-		m_initialPoseSub = m_nh.subscribe(node_name+"/initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
+		m_initialPoseSub = lnh.subscribe("initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
 		if(m_useRageOnly)
 			m_rangeSub = m_nh.subscribe(m_inRangeTopic, 1, &ParticleFilter::rangeDataCallback, this);
 		if(m_useImu)
@@ -174,6 +184,14 @@ public:
 		m_posesPub = lnh.advertise<geometry_msgs::PoseArray>("particle_cloud", 1, true);
 		m_visPub = lnh.advertise<visualization_msgs::Marker>("uav", 0);
 		m_pose_cov_pub = lnh.advertise<geometry_msgs::PoseWithCovarianceStamped>("pose", 1);
+
+		// Fiducial pose subscriber
+		if(!lnh.getParam("use_fiducial", m_use_fiducial))
+            m_use_fiducial = false;  
+		if (m_use_fiducial) {
+			m_fiducialPoseSub = m_nh.subscribe("fiducial_pose", 2, &ParticleFilter::fiducialPoseReceived, this);
+		}
+
 
 		// Launch updater timer
 		updateTimer = m_nh.createTimer(ros::Duration(1.0/m_updateRate), &ParticleFilter::checkUpdateThresholdsTimer, this);
@@ -219,7 +237,6 @@ public:
 		// If the filter is not initialized then exit
 		if(!m_init)
 			return false;
-		std::cout << "Checking for AMCl3D update" << std::endl;
 					
 		// Compute odometric translation and rotation since last update 
 		tf::StampedTransform odomTf;
@@ -315,12 +332,19 @@ private:
 	
 	//! IMU callback
 	void imuCallback(const sensor_msgs::Imu::ConstPtr& msg) {
+		double r = m_roll;
+		double p = m_pitch;
 		auto o = msg->orientation;
 		tf::Quaternion q;
 		tf::quaternionMsgToTF(o, q);
 		tf::Matrix3x3 M(q);
 		double yaw;
 		M.getRPY(m_roll, m_pitch, yaw);
+
+		if (isnan(m_roll) || isnan(m_pitch)) {
+			m_roll = r;
+			m_pitch = p;
+		}
 	}
 
 	//! Range-only data callback
@@ -430,6 +454,7 @@ private:
 		delta_x = T.getOrigin().getX();
 		delta_y = T.getOrigin().getY();
 		delta_z = T.getOrigin().getZ();
+
 		T.getBasis().getRPY(delta_r, delta_p, delta_a);
 		if(!predict(delta_x, delta_y, delta_z, (float)delta_a))
 		{
@@ -457,15 +482,31 @@ private:
 	//!in meters and yaw angle incremenet in rad
 	bool predict(float delta_x, float delta_y, float delta_z, float delta_a)
 	{
+		if(m_use_2d_odom) { // Adapt the 2d odometry according to the IMU measurements
+			float cr, sr, cp, sp, cy, sy, rx, ry; 
+			float r00, r01, r02, r10, r11, r12, r20, r21, r22;
+			sr = sin(m_roll);
+			cr = cos(m_roll);
+			sp = sin(m_pitch);
+			cp = cos(m_pitch);
+			r00 = cp; 	r01 = sp*sr; 	
+			r10 =  0; 	r11 = cr;		
+			r20 = -sp;	r21 = cp*sr;	
+			delta_z = delta_x*r20 + delta_y*r21;
+			delta_x = delta_x*r00 + delta_y*r01;
+			delta_y = delta_y*r11;
+		}
+			
 		float xDev, yDev, zDev, aDev;
 		xDev = fabs(delta_x*m_odomXMod);
 		yDev = fabs(delta_y*m_odomYMod);
-		zDev = fabs(delta_z*m_odomZMod);
+		zDev = fabs(delta_z*m_odomZMod)+fabs(m_odomZModMin);
 		aDev = fabs(delta_a*m_odomAMod)+fabs(m_odomAModMin);
 		
 		//Make a prediction for all particles according to the odometry
 		for(int i=0; i<(int)m_p.size(); i++)
 		{
+			
 			float sa = sin(m_p[i].a);
 			float ca = cos(m_p[i].a);
 			float randX = delta_x + gsl_ran_gaussian(m_randomValue, xDev);
@@ -474,6 +515,7 @@ private:
 			m_p[i].y += sa*randX + ca*randY;
 			m_p[i].z += delta_z + gsl_ran_gaussian(m_randomValue, zDev);
 			m_p[i].a += delta_a + gsl_ran_gaussian(m_randomValue, aDev);
+			 
 		}
 		
 		return true;
@@ -483,6 +525,7 @@ private:
 	bool update(sensor_msgs::PointCloud2 &cloud)
 	{		
 		// Compensate for the current roll and pitch of the base-link
+		
 		std::vector<pcl::PointXYZ> points;
 		float cr, sr, cp, sp, cy, sy, rx, ry;
 		float r00, r01, r02, r10, r11, r12, r20, r21, r22;
@@ -499,9 +542,15 @@ private:
 		points.resize(cloud.width);
 		for(int i=0; i<cloud.width; ++i, ++iterX, ++iterY, ++iterZ)
 		{
-			points[i].x = *iterX*r00 + *iterY*r01 + *iterZ*r02;
-			points[i].y = *iterX*r10 + *iterY*r11 + *iterZ*r12;
-			points[i].z = *iterX*r20 + *iterY*r21 + *iterZ*r22;
+			if (m_use_2d_odom) {
+				points[i].x = *iterX*r00 + *iterY*r01 + *iterZ*r02;
+				points[i].y = *iterX*r10 + *iterY*r11 + *iterZ*r12;
+				points[i].z = *iterX*r20 + *iterY*r21 + *iterZ*r22;
+			} else {
+				points[i].x = *iterX;
+				points[i].y = *iterY;
+				points[i].z = *iterZ;
+			}
 		}
 		
 		// Incorporate measurements
@@ -597,6 +646,9 @@ private:
 		// Sample the given pose
 		tf::Vector3 t = initPose.getOrigin();
 		float a = getYawFromTf(initPose);
+
+		ROS_INFO("Setting initial pose. A = %f. aDev = %f", a, aDev);
+
 		float dev = std::max(std::max(xDev, yDev), zDev);
 		float gaussConst1 = 1./(dev*sqrt(2*M_PI));
 		float gaussConst2 = 1./(2*dev*dev);
@@ -666,7 +718,7 @@ private:
 		c = m_p[0].w;
 		r = factor*gsl_rng_uniform(m_randomValue);
 
-		//Do resamplig
+		//Do resampling
 		for(m=0; m<m_p.size(); m++)
 		{
 			u = r + factor*(float)m;
@@ -691,7 +743,6 @@ private:
 		// Compute mean value from particles
 		float mx, my, mz, ma, varx, vary, varz, vara;
 		computeVar(mx, my, mz, ma, varx, vary, varz, vara);
-
 			
 		// Compute the TF from odom to global
 		std::cout << "New TF:\n\t" << mx << ", " << my << ", " << mz << std::endl;
@@ -710,13 +761,24 @@ private:
 		for (size_t i = 0; i < 36; i++)
 			m_lastPose.pose.covariance[i] = 0.0;
 
-		m_lastPose.pose.covariance[0] = varx;
-		m_lastPose.pose.covariance[7] = vary;
-		m_lastPose.pose.covariance[14] = varz;
+		m_lastPose.pose.covariance[0] = varx*10;
+		m_lastPose.pose.covariance[7] = vary*10;
+		m_lastPose.pose.covariance[14] = varz*10;
 		m_lastPose.pose.covariance[21] = m_lastPose.pose.covariance[28] = 0.01;
-		m_lastPose.pose.covariance[35] = vara;
+		m_lastPose.pose.covariance[35] = vara*10;
 
 		m_pose_cov_pub.publish(m_lastPose);
+	}
+
+	double computeFiducialWeight(double dist_sq, double dist_a_sq, double sigma) {
+		double k1, k2;
+		double w_a = 0.5; // TODO set as parameter
+		double dist = dist_a_sq + dist_sq * w_a;
+		
+		k1 = 1.0/(sigma*sqrt(2*M_PI));
+		k2 = 0.5/(sigma*sigma);
+
+		return k1*exp(-k2*dist);
 	}
 
 	float computeRangeWeight(float x, float y, float z)
@@ -778,9 +840,80 @@ private:
 			varA += m_p[i].w * (m_p[i].a-mA) * (m_p[i].a-mA);
 		}
 	}
+
+	//! Handles estimation from fiducial slam
+	void fiducialPoseReceived(const geometry_msgs::PoseWithCovarianceStampedConstPtr& msg)
+	{
+		double wt = 0.0;
+		double x = msg->pose.pose.position.x;
+		double y = msg->pose.pose.position.y;
+		double z = msg->pose.pose.position.z;
+
+		double r, p;
+		auto o = msg->pose.pose.orientation;
+		tf::Quaternion q;
+		tf::quaternionMsgToTF(o, q);
+		tf::Matrix3x3 M(q);
+		double a;
+		M.getRPY(r, p, a);
+
+		double var = msg->pose.covariance[0];
+
+		ROS_INFO("Updating with Fiducial. Estimated pose: %f, %f, %f, %f. Variance: %f", x, y ,z, a, var);
+		{
+			float x,y,z,a_,vx,vy,vz,va;
+			computeVar(x,y,z,a_,vx,vy,vz,va);
+			
+			ROS_INFO("Mean Pose: %f, %f, %f, %f.", x, y ,z, a_);
+		}
+
+		// Perform update with fiducials
+		for(auto p:m_p)
+		{
+			// Evaluate the weight of the point-cloud
+			double dist_sq = (x-p.x)*(x-p.x) + (y-p.y)*(y-p.y); // + (z-p.z)*(z-p.z);
+			double dist_a = ang_dist(a, p.a);
+			dist_a *= dist_a;
+
+			p.w = computeFiducialWeight(dist_sq, dist_a, var);
+
+			ROS_INFO( "Dist sq %f, Dist a %f, Var %f, Weight %f", dist_sq, dist_a, var, p.w);
+				
+			//Increase the summatory of weights
+			wt += p.w;
+		}
+		// Normalize weights
+		for(auto p:m_p)
+		{
+			p.w = p.w / wt;
+		}
+		computeGlobalTfAndPose();
+
+		//Do the resampling if needed
+		m_nUpdates++;
+		if(m_nUpdates > m_resampleInterval)
+		{
+			m_nUpdates = 0;
+			resample();
+		}
+
+		{
+			float x,y,z,a_,vx,vy,vz,va;
+			computeVar(x,y,z,a_,vx,vy,vz,va);
+			
+			ROS_INFO("After resample: %f, %f, %f, %f.", x, y ,z, a_);
+		}
+			
+		
+		// Publish particles
+		publishParticles();
+	}
 	
 	//! Indicates if the filter was initialized
 	bool m_init;
+
+	//! If true, the odometry is assumed 2d and thus we proyect it into 3d
+	bool m_use_2d_odom;
 	
 	//! Indicates that the local transfrom for the pint-cloud is cached
 	bool m_tfCache;
@@ -798,7 +931,7 @@ private:
 	int m_minParticles;
 	
 	//! Odometry characterization
-	double m_odomXMod, m_odomYMod, m_odomZMod, m_odomAMod, m_odomAModMin;
+	double m_odomXMod, m_odomYMod, m_odomZMod, m_odomAMod, m_odomAModMin, m_odomZModMin;
     double m_initX, m_initY, m_initZ, m_initA, m_initZOffset;
 	double m_initXDev, m_initYDev, m_initZDev, m_initADev;
 	double m_voxelSize;
@@ -821,6 +954,10 @@ private:
 	std::vector<rangeData> m_rangeData;
 	std::string m_inRangeTopic;
 	float m_rangeOnlyDev;
+
+	//! Fiducial related stuff
+	ros::Subscriber m_fiducialPoseSub;
+	bool m_use_fiducial;
 	
 	//! Node parameters
 	std::string m_inCloudTopic;
@@ -836,6 +973,8 @@ private:
     ros::Subscriber m_pcSub, m_initialPoseSub, m_odomTfSub, m_rangeSub, m_imuSub;
 	ros::Publisher m_posesPub, m_visPub, m_pose_cov_pub;
 	ros::Timer updateTimer;
+
+
 	
 	//! Random number generator
 	const gsl_rng_type *m_randomType;

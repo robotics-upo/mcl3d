@@ -11,17 +11,13 @@
   # Bag file
   <!-- <node name="bag_player" type="play" pkg="rosbag" args="$(arg bag_file) -s 0 -r 1.0 -l" /> -->
   <arg name="initial_x" default="14.8"/>
-  <arg name="initial_y" default="14.8"/>
-  <arg name="initial_z" default="0.4"/>
-  <arg name="initial_a" default="2.5"/>
+  <arg name="initial_y" default="15"/>
+  <arg name="initial_z" default="0.25"/>
+  <arg name="initial_a" default="2.4"/>
   <arg name="base_frame_id" default="base_link"/>
   <arg name="odom_frame_id" default="odom"/>
   <arg name="global_frame_id" default="map"/>
-
-  <node pkg="odom_to_tf" type="odom_to_tf.py" name="odom_to_tf">
-    <param name="base_link" value="$(arg base_frame_id)"/>
-    <param name="odometry_frame" value="$(arg odom_frame_id)"/>
-  </node>
+  <arg name="use_fiducial" default="true"/>
 
   # Launch MCL3D
   <node name="mcl3d_node" type="mcl3d_node" pkg="mcl3d" output="screen">
@@ -34,17 +30,17 @@
 
     <param name="map_path" value="$(env HOME)/3dmaps/marseille/day1_first/octomap_full.bt" />
     <param name="publish_point_cloud" value="true" />
-    <param name="sensor_dev" value="0.05" />
-    <param name="cloud_voxel_size" value="0.1"/>
+    <param name="sensor_dev" value="0.03" />
+    <param name="cloud_voxel_size" value="0.05"/>
     <param name="publish_grid_slice" value="0.0"/>
     
     <param name="min_particles" value="300" />
     <param name="max_particles" value="500" />
     
-    <param name="odom_x_mod" value="0.2" />
-    <param name="odom_y_mod" value="0.2" />
+    <param name="odom_x_mod" value="0.25" />
+    <param name="odom_y_mod" value="0.25" />
     <param name="odom_z_mod" value="0.05" />
-    <param name="odom_a_mod" value="0.2" />
+    <param name="odom_a_mod" value="0.25" />
     
     <param name="resample_interval" value="0" />
     
@@ -57,16 +53,18 @@
     <param name="initial_a"   value="$(arg initial_a)"/>
 
 
-    <param name="initial_x_dev" value="0.2" />
-    <param name="initial_y_dev" value="0.2" />
-    <param name="initial_z_dev" value="0.001" />
-    <param name="initial_a_dev" value="0.2" />
+    <param name="initial_x_dev" value="0.1" />
+    <param name="initial_y_dev" value="0.1" />
+    <param name="initial_z_dev" value="0.2" />
+    <param name="initial_a_dev" value="0.05" />
     <param name="initial_z_offset" value="0.5" />
     
     <param name="use_range_only" value="false" />
     <param name="in_range" value="/localino_node/anchor/range" />
     <param name="range_only_tag" value="0x1436393435260290" />
     <param name="range_only_dev" value="0.1" />
+
+    <param name="use_fiducial" value="$(arg use_fiducial)"/>
  
   </node>
 
