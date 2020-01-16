@@ -184,8 +184,10 @@ public:
 		if (m_useRageOnly)
 			m_rangeSub = m_nh.subscribe(m_inRangeTopic, 1, &ParticleFilter::rangeDataCallback, this);
 
-		if (m_use_gps)
+		if (m_use_gps) {
 			m_gps_pos_sub = m_nh.subscribe("gps/fix", 1, &ParticleFilter::gpsCallback, this);
+			m_gps_point_pub = lnh.advertise<geometry_msgs::PointStamped>("gps_point",0);
+		}
 
 		// Launch publishers
 		m_posesPub = lnh.advertise<geometry_msgs::PoseArray>("particle_cloud", 1, true);
@@ -653,6 +655,7 @@ private:
 			ROS_ERROR("Update GPS. Could not transform from GPS to global frame. Content: %s", ex.what());
 			return false;
 		}
+		m_gps_point_pub.publish(map_point);
 
 		float wtgps = 0.0f;
 		for (int i = 0; i < m_p.size(); i++)
@@ -949,6 +952,7 @@ private:
 	EarthLocation m_gps_fix_location, m_last_gps_measure;
 	std::string m_gpsFrameId;
 	int m_n_gps_meas;
+	ros::Publisher m_gps_point_pub;
 
 	//! Node parameters
 	std::string m_inCloudTopic;
