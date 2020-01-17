@@ -197,7 +197,22 @@ public:
 		updateTimer = m_nh.createTimer(ros::Duration(1.0 / m_updateRate), &ParticleFilter::checkUpdateThresholdsTimer, this);
 
 		// Initialize TF from odom to map as identity
+
 		m_lastGlobalTf.setIdentity();
+
+		if(m_initX != 0 || m_initY != 0 || m_initZ != 0 || m_initA != 0){
+			tf::Pose pose;
+			tf::Vector3 origin(m_initX, m_initY, m_initZ);
+			tf::Quaternion q;
+			q.setRPY(0,0,m_initA);
+
+			pose.setOrigin(origin);
+			pose.setRotation(q);
+			
+			setInitialPose(pose, m_initXDev, m_initYDev, m_initZDev, m_initADev);
+			m_init = true;
+			
+		}
 	}
 
 	//!Default destructor
