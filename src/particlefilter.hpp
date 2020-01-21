@@ -27,6 +27,9 @@
 #include <time.h>
 #include <range_msgs/P2PRangeWithPose.h>
 
+using std::isnan;
+
+
 double ang_dist(double a, double a_) {
 	double dist_a = a - a_;
 	return dist_a - floor( (dist_a + M_PI) /M_PI*0.5)*M_PI*2.0;
