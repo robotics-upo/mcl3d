@@ -179,7 +179,7 @@ public:
 
 		// Launch subscribers
 		m_pcSub = m_nh.subscribe(m_inCloudTopic, 1, &ParticleFilter::pointcloudCallback, this);
-		m_initialPoseSub = lnh.subscribe("initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
+		m_initialPoseSub = lnh.subscribe("/initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
 
 		if (m_useRageOnly)
 			m_rangeSub = m_nh.subscribe(m_inRangeTopic, 1, &ParticleFilter::rangeDataCallback, this);
