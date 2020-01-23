@@ -867,6 +867,7 @@ private:
 	{
 		static const float k1 = 1.0 / (m_gps_dev);
 		static const float k2 = 0.5 / (m_gps_dev * m_gps_dev);
+<<<<<<< HEAD
 		float r ;
 		if(m_use_gps_alt){
 			r = sqrt((p.point.x - x) * (p.point.x - x) +
@@ -874,6 +875,15 @@ private:
 						(p.point.z - z) * (p.point.y - z));
 		}else{
 			r = sqrt((p.point.x - x) * (p.point.x - x) +
+=======
+
+		if(m_use_gps_alt){
+			float r = sqrt((p.point.x - x) * (p.point.x - x) +
+					   (p.point.y - y) * (p.point.y - y) +
+						(p.point.z - z) * (p.point.y - z));
+		}else{
+			float r = sqrt((p.point.x - x) * (p.point.x - x) +
+>>>>>>> 09ed83355c288e96b1f216c70f7b5c9a3cb9fd12
 						   (p.point.y - y) * (p.point.y - y)); 
 		}
 
