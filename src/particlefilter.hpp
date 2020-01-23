@@ -114,6 +114,7 @@ public:
 
 		// Read GPS parameteres
 		lnh.param("use_gps", m_use_gps, false);
+		lnh.param("use_gps_altitude",m_use_gps_alt,true);
 		lnh.param("gps_dev", m_gps_dev, (float)1.0);
 		// lnh.param("min_sat", m_gps_min_sat, 3);
 		// lnh.param("gps_pose", m_gps_pose, {0,0,0,0}); // Relative coordinates of the gps fix in the map (x,y,z,yaw)
@@ -867,9 +868,14 @@ private:
 		static const float k1 = 1.0 / (m_gps_dev);
 		static const float k2 = 0.5 / (m_gps_dev * m_gps_dev);
 
-		float r = sqrt((p.point.x - x) * (p.point.x - x) +
-					   (p.point.y - y) * (p.point.y - y)); // +
-														   //(p.point.z - z) * (p.point.y - z));
+		if(m_use_gps_alt){
+			float r = sqrt((p.point.x - x) * (p.point.x - x) +
+					   (p.point.y - y) * (p.point.y - y) +
+						(p.point.z - z) * (p.point.y - z));
+		}else{
+			float r = sqrt((p.point.x - x) * (p.point.x - x) +
+						   (p.point.y - y) * (p.point.y - y)); 
+		}
 
 		return k1 * exp(-k2 * (r * r));
 	}
@@ -967,7 +973,8 @@ private:
 
 	// GPS updates
 	float m_gps_dev;
-	bool m_use_gps;
+	
+	bool m_use_gps,m_use_gps_alt;
 	std::vector<double> m_gps_pose, m_gps_fix_coords;
 	EarthLocation m_gps_fix_location, m_last_gps_measure;
 	std::string m_gpsFrameId;
