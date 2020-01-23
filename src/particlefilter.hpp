@@ -81,6 +81,9 @@ public:
 
 		// Read node parameters
 		ros::NodeHandle lnh("~");
+
+		lnh.param("use_pcl", m_use_pcl, true);
+
 		if (!lnh.getParam("in_cloud", m_inCloudTopic))
 			m_inCloudTopic = "pointcloud";
 		if (!lnh.getParam("base_frame_id", m_baseFrameId))
@@ -178,7 +181,9 @@ public:
 		m_p.resize(m_maxParticles);
 
 		// Launch subscribers
-		m_pcSub = m_nh.subscribe(m_inCloudTopic, 1, &ParticleFilter::pointcloudCallback, this);
+		if(!m_use_pcl)
+			m_pcSub = m_nh.subscribe(m_inCloudTopic, 1, &ParticleFilter::pointcloudCallback, this);
+		
 		m_initialPoseSub = lnh.subscribe("/initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
 
 		if (m_useRageOnly)
@@ -434,7 +439,7 @@ private:
 		sensor_msgs::PointCloud2 baseCloud, downCloud;
 		pcl_ros::transformPointCloud(m_baseFrameId, m_pclTf, *cloud, baseCloud);
 
-		// Apply voxel grid
+		/* Apply voxel grid
 		pcl::VoxelGrid<pcl::PointXYZ> sor;
 		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_down(new pcl::PointCloud<pcl::PointXYZ>);
@@ -443,7 +448,7 @@ private:
 		sor.setLeafSize(m_voxelSize, m_voxelSize, m_voxelSize);
 		sor.filter(*cloud_down);
 		cloud_down->header = cloud_src->header;
-		pcl::toROSMsg(*cloud_down, downCloud);
+		pcl::toROSMsg(*cloud_down, downCloud);*/
 
 		float delta_x, delta_y, delta_z, delta_a;
 		tf::StampedTransform odomTf = getOdometryShift(delta_x, delta_y, delta_z, delta_a);
@@ -455,7 +460,7 @@ private:
 		}
 
 		// Perform particle update based on current point-cloud
-		if (!update(downCloud))
+		if (!update(baseCloud))
 		{
 			ROS_ERROR("Update error!");
 			return;
@@ -920,7 +925,7 @@ private:
 	}
 
 	//! Indicates if the filter was initialized
-	bool m_init;
+	bool m_init,m_use_pcl;
 
 	//! Indicates that the local transfrom for the pint-cloud is cached
 	bool m_tfCache;
