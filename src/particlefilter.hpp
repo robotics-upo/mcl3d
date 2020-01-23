@@ -119,6 +119,15 @@ public:
 		// lnh.param("min_sat", m_gps_min_sat, 3);
 		// lnh.param("gps_pose", m_gps_pose, {0,0,0,0}); // Relative coordinates of the gps fix in the map (x,y,z,yaw)
 
+		//Weight coefficients of gps,pcl and range measures
+		lnh.param("gps_w", m_wgps, (double)0.6);
+		lnh.param("range_w", m_wr, (double)0);
+
+		if(m_wr+m_wgps > 1 || m_wr <0 || m_wgps < 0){
+			ROS_FATAL("Non valids Weights wr %f, w gps %f", m_wr, m_wgps);
+		}
+		m_wp = 1 - m_wgps - m_wr;
+
 		double lat, longitude, alt;
 		m_gps_fix_coords.resize(3);
 		lnh.param("gps_fix_latitude", lat, 47.0); // Latitude and longitude in decimal degrees
@@ -168,12 +177,18 @@ public:
 			m_dTh = 0.2;
 		if (!lnh.getParam("update_min_a", m_aTh))
 			m_aTh = 0.2;
+		if (!lnh.getParam("update_min_time", m_tTh))
+			m_tTh = 1.0;
 		if (!lnh.getParam("resample_interval", m_resampleInterval))
 			m_resampleInterval = 0;
 		if (!lnh.getParam("initial_z_offset", m_initZOffset))
 			m_initZOffset = 0.0;
 		if (!lnh.getParam("cloud_voxel_size", m_voxelSize))
 			m_voxelSize = 0.05;
+
+		lnh.param("odom_x_bias", m_odomXBias, 0.2);
+		lnh.param("odom_y_bias", m_odomYBias, 0.2);
+		lnh.param("odom_z_bias", m_odomZBias, 0.2);
 
 		m_nUpdates = 0;
 		m_init = false;
@@ -182,8 +197,7 @@ public:
 		m_p.resize(m_maxParticles);
 
 		// Launch subscribers
-		if(m_use_pcl)
-			m_pcSub = m_nh.subscribe(m_inCloudTopic, 1, &ParticleFilter::pointcloudCallback, this);
+		m_pcSub = m_nh.subscribe(m_inCloudTopic, 1, &ParticleFilter::pointcloudCallback, this);
 		
 		m_initialPoseSub = lnh.subscribe("/initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
 
@@ -203,8 +217,10 @@ public:
 		updateTimer = m_nh.createTimer(ros::Duration(1.0 / m_updateRate), &ParticleFilter::checkUpdateThresholdsTimer, this);
 
 		// Initialize TF from odom to map as identity
-
 		m_lastGlobalTf.setIdentity();
+
+		// Time stamp for periodic update
+		m_lastPeriodicUpdate = ros::Time::now();
 
 		if(m_initX != 0 || m_initY != 0 || m_initZ != 0 || m_initA != 0){
 			tf::Pose pose;
@@ -239,6 +255,7 @@ public:
 		// std::cout << "Checking for AMCl3D update" << std::endl;
 
 		// Compute odometric translation and rotation since last update
+		ros::Time t = ros::Time::now();
 		tf::StampedTransform odomTf;
 		try
 		{
@@ -257,6 +274,7 @@ public:
 		{
 			ROS_INFO("Translation update");
 			m_doUpdate = true;
+			m_lastPeriodicUpdate = t;
 			return true;
 		}
 
@@ -267,6 +285,16 @@ public:
 		{
 			ROS_INFO("Rotation update");
 			m_doUpdate = true;
+			m_lastPeriodicUpdate = t;
+			return true;
+		}
+
+		// Check time threshold
+		if((t-m_lastPeriodicUpdate).toSec() > m_tTh)
+		{
+			ROS_INFO("Periodic update");
+			m_doUpdate = true;
+			m_lastPeriodicUpdate = t;
 			return true;
 		}
 
@@ -377,37 +405,57 @@ private:
 		if (!m_init)
 			return;
 
-		// Check if an update must be performed or not
-		static int cont = 0;
-		cont++;
-		if (cont < m_n_gps_meas)
-			return;
-		cont = 0;
+		// float delta_x, delta_y, delta_z, delta_a;
+		// tf::StampedTransform odomTf = getOdometryShift(delta_x, delta_y, delta_z, delta_a);
 
-		float delta_x, delta_y, delta_z, delta_a;
-		tf::StampedTransform odomTf = getOdometryShift(delta_x, delta_y, delta_z, delta_a);
-
-		if (!predict(delta_x, delta_y, delta_z, delta_a))
-		{
-			ROS_ERROR("Prediction error!");
-			return;
-		}
-		// Update time and transform information
-		m_lastOdomTf = odomTf;
+		// if (!predict(delta_x, delta_y, delta_z, delta_a))
+		// {
+		// 	ROS_ERROR("Prediction error!");
+		// 	return;
+		// }
+		// // Update time and transform information
+		// m_lastOdomTf = odomTf;
 
 		m_last_gps_measure.setLongitude(msg->longitude);
 		m_last_gps_measure.setLatitude(msg->latitude);
 		m_last_gps_measure.setAltitude(msg->altitude);
 
-		// Perform particle update based on current point-cloud
-		if (!update(m_last_gps_measure))
-		{
-			ROS_ERROR("Update error!");
-			return;
-		}
+		std::vector<double> local = m_last_gps_measure.toRelative(m_gps_fix_location);
 
-		// Publish particles
-		publishParticles();
+		ROS_INFO("GPS Coords: [%s]. GPS Relative Position: [%.3f, %.3f]", m_last_gps_measure.toString().c_str(), local[0], local[1]);
+
+		// The coordinates are in the gps frame we should transfrom them to the map frame
+		// The GPS frame points to the EAST in a point whose coords are known a priori
+		geometry_msgs::PointStamped curr_gps_point;
+		curr_gps_point.point.x = local[0];
+		curr_gps_point.point.y = local[1];
+		curr_gps_point.point.z = local[2];
+		curr_gps_point.header.frame_id = m_gpsFrameId;
+		curr_gps_point.header.stamp = ros::Time(0);
+
+		try
+		{
+			m_tfListener.waitForTransform(m_gpsFrameId, m_globalFrameId, ros::Time(0), ros::Duration(2.0));
+			m_tfListener.transformPoint(m_globalFrameId, curr_gps_point, m_gps_map_point);
+			ROS_INFO("Map Relative Position: [%.3f, %.3f]", m_gps_map_point.point.x, m_gps_map_point.point.y);
+			m_use_gps=true;
+		}
+		catch (tf::TransformException ex)
+		{
+			ROS_ERROR("Update GPS. Could not transform from GPS to global frame. Content: %s", ex.what());
+			m_use_gps=false;
+		}
+		m_gps_point_pub.publish(m_gps_map_point);
+
+		// // Perform particle update based on current point-cloud
+		// if (!update(m_last_gps_measure))
+		// {
+		// 	ROS_ERROR("Update error!");
+		// 	return;
+		// }
+
+		// // Publish particles
+		// publishParticles();
 		ROS_INFO("Inside GPS Callback");
 	}
 
@@ -512,9 +560,9 @@ private:
 	bool predict(float delta_x, float delta_y, float delta_z, float delta_a)
 	{
 		float xDev, yDev, zDev, aDev;
-		xDev = fabs(delta_x * m_odomXMod);
-		yDev = fabs(delta_y * m_odomYMod);
-		zDev = fabs(delta_z * m_odomZMod);
+		xDev = m_odomXBias + fabs(delta_x * m_odomXMod);
+		yDev = m_odomYBias + fabs(delta_y * m_odomYMod);
+		zDev = m_odomZBias + fabs(delta_z * m_odomZMod);
 		aDev = fabs(delta_a * m_odomAMod);
 
 		//Make a prediction for all particles according to the odometry
@@ -565,7 +613,7 @@ private:
 		}
 
 		// Incorporate measurements
-		float alpha, wtp = 0, wtr = 0;
+		float alpha, wtp = 0, wtr = 0, wgps = 0;
 		std::vector<pcl::PointXYZ> new_points;
 		new_points.resize(points.size());
 		if (m_resampleInterval > 0)
@@ -603,6 +651,19 @@ private:
 			// Evaluate the weight of the point-cloud
 			m_p[i].wp = m_grid3d.computeCloudWeight(new_points);
 
+			// Evaluate the weight of the gps
+			if (m_use_gps) {
+				double dist = sqrt((m_gps_map_point.point.x-m_p[i].x)*(m_gps_map_point.point.x-m_p[i].x) + 
+				                   (m_gps_map_point.point.y-m_p[i].y)*(m_gps_map_point.point.y-m_p[i].y) + 
+								   (m_gps_map_point.point.z-m_p[i].z)*(m_gps_map_point.point.z-m_p[i].z));
+				double k1 = 1.0 / (m_gps_dev * sqrt(2 * M_PI));
+				double k2 = 0.5 / (m_gps_dev * m_gps_dev);				
+				m_p[i].wgps = k1 * exp(-k2 * dist * dist);
+			}
+			else
+				m_p[i].wgps = 0.0;
+			
+			
 			// Evaluate the weight of the range sensors
 			if (m_rangeData.size() > 0 && m_useRageOnly)
 				m_p[i].wr = computeRangeWeight(tx, ty, tz);
@@ -612,6 +673,7 @@ private:
 			//Increase the summatory of weights
 			wtp += m_p[i].wp;
 			wtr += m_p[i].wr;
+			wgps += m_p[i].wgps;
 		}
 
 		// Clean the range buffer
@@ -621,16 +683,22 @@ private:
 		for (int i = 0; i < (int)m_p.size(); i++)
 		{
 			m_p[i].wp /= wtp;
+
 			if (m_rangeData.size() > 0 && m_useRageOnly)
 			{
 				m_p[i].wr /= wtr;
-				m_p[i].w = m_p[i].wp * 0.5 + m_p[i].wr * 0.5;
-			}
-			else
-			{
+			} else {
 				m_p[i].wr = 0;
-				m_p[i].w = m_p[i].wp;
 			}
+
+			if (m_use_gps) {
+				m_p[i].wgps /= wgps;
+			}
+			else {
+				m_p[i].wgps = 0;
+			}
+
+			m_p[i].w = m_p[i].wp * m_wp + m_p[i].wr * m_wr + m_p[i].wgps * m_wgps;
 		}
 
 		// Re-compute global TF according to new weight of samples
@@ -867,23 +935,13 @@ private:
 	{
 		static const float k1 = 1.0 / (m_gps_dev);
 		static const float k2 = 0.5 / (m_gps_dev * m_gps_dev);
-<<<<<<< HEAD
 		float r ;
 		if(m_use_gps_alt){
 			r = sqrt((p.point.x - x) * (p.point.x - x) +
 					   (p.point.y - y) * (p.point.y - y) +
-						(p.point.z - z) * (p.point.y - z));
+						(p.point.z - z) * (p.point.z - z));
 		}else{
 			r = sqrt((p.point.x - x) * (p.point.x - x) +
-=======
-
-		if(m_use_gps_alt){
-			float r = sqrt((p.point.x - x) * (p.point.x - x) +
-					   (p.point.y - y) * (p.point.y - y) +
-						(p.point.z - z) * (p.point.y - z));
-		}else{
-			float r = sqrt((p.point.x - x) * (p.point.x - x) +
->>>>>>> 09ed83355c288e96b1f216c70f7b5c9a3cb9fd12
 						   (p.point.y - y) * (p.point.y - y)); 
 		}
 
@@ -940,6 +998,9 @@ private:
 		}
 	}
 
+	//Weights
+	double m_wp,m_wgps,m_wr;
+
 	//! Indicates if the filter was initialized
 	bool m_init,m_use_pcl;
 
@@ -959,6 +1020,7 @@ private:
 
 	//! Odometry characterization
 	double m_odomXMod, m_odomYMod, m_odomZMod, m_odomAMod;
+	double m_odomXBias,m_odomYBias,m_odomZBias; 
 	double m_initX, m_initY, m_initZ, m_initA, m_initZOffset;
 	double m_initXDev, m_initYDev, m_initZDev, m_initADev;
 	double m_voxelSize;
@@ -971,6 +1033,7 @@ private:
 	double m_dTh, m_aTh, m_tTh;
 	tf::StampedTransform m_lastOdomTf;
 	tf::Transform m_lastGlobalTf;
+	ros::Time m_lastPeriodicUpdate;
 	bool m_doUpdate;
 	double m_updateRate;
 
@@ -990,6 +1053,7 @@ private:
 	std::string m_gpsFrameId;
 	int m_n_gps_meas;
 	ros::Publisher m_gps_point_pub;
+	geometry_msgs::PointStamped m_gps_map_point;
 
 	//! Node parameters
 	std::string m_inCloudTopic;
