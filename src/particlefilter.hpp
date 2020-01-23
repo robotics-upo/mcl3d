@@ -181,7 +181,7 @@ public:
 		m_p.resize(m_maxParticles);
 
 		// Launch subscribers
-		if(!m_use_pcl)
+		if(m_use_pcl)
 			m_pcSub = m_nh.subscribe(m_inCloudTopic, 1, &ParticleFilter::pointcloudCallback, this);
 		
 		m_initialPoseSub = lnh.subscribe("/initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
