@@ -26,6 +26,8 @@
 #include <time.h>
 #include <range_msgs/P2PRangeWithPose.h>
 #include <sensor_msgs/NavSatFix.h>
+#include <sensor_msgs/Imu.h>
+
 #include "mcl3d/earthlocation.h"
 
 //Class definition
@@ -134,7 +136,7 @@ public:
 		m_gps_fix_coords[0] = lat;
 		lnh.param("gps_fix_longitude", longitude, -5.0); // Latitude and longitude in decimal degrees
 		m_gps_fix_coords[1] = longitude;
-		lnh.param("gps_fix_altitude", alt, 30.0); // Latitude and longitude in decimal degrees
+		lnh.param("gps_fix_altitude", alt, 30.0); // Altitude in meters
 		m_gps_fix_coords[2] = alt;
 
 		m_gps_fix_location = EarthLocation(m_gps_fix_coords);
@@ -207,6 +209,14 @@ public:
 		if (m_use_gps) {
 			m_gps_pos_sub = m_nh.subscribe("gps/fix", 1, &ParticleFilter::gpsCallback, this);
 			m_gps_point_pub = lnh.advertise<geometry_msgs::PointStamped>("gps_point",0);
+		}
+		
+		// Read IMU parameteres
+		m_roll = m_pitch = m_yaw = 0.0;
+		lnh.param("imu_yaw_bias", m_imu_yaw_bias, 0.0);
+		lnh.param("use_imu", m_use_imu, false);
+		if (m_use_imu) {
+			m_imu_sub = m_nh.subscribe("imu", 1, &ParticleFilter::imuCallback, this);
 		}
 
 		// Launch publishers
@@ -354,6 +364,14 @@ private:
 
 		// Initialize the filter
 		setInitialPose(pose, m_initXDev, m_initYDev, m_initZDev, m_initADev);
+	}
+	
+	//! IMU callback
+	void imuCallback(const sensor_msgs::Imu::ConstPtr& msg)
+	{
+		tf::Quaternion q(msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
+		tf::Matrix3x3(q).getRPY(m_roll, m_pitch, m_yaw);	
+		m_yaw = m_yaw-m_imu_yaw_bias;
 	}
 
 	//! Range-only data callback
@@ -873,6 +891,8 @@ private:
 			}
 			newP[m] = m_p[i];
 			newP[m].w = factor;
+			if(m_use_imu)
+				newP[m].a = m_yaw;
 		}
 
 		//Asign the new particles set
@@ -1011,8 +1031,8 @@ private:
 	//! Particles
 	std::vector<particle> m_p;
 
-	//! Particles roll and pich (given by IMU)
-	double m_roll, m_pitch;
+	//! Particles roll, pich  and yaw (given by IMU)
+	double m_roll, m_pitch, m_yaw, m_imu_yaw_bias;
 
 	//! Number of particles in the filter
 	int m_maxParticles;
@@ -1047,7 +1067,7 @@ private:
 	// GPS updates
 	float m_gps_dev;
 	
-	bool m_use_gps,m_use_gps_alt;
+	bool m_use_gps, m_use_gps_alt, m_use_imu;
 	std::vector<double> m_gps_pose, m_gps_fix_coords;
 	EarthLocation m_gps_fix_location, m_last_gps_measure;
 	std::string m_gpsFrameId;
@@ -1070,7 +1090,8 @@ private:
 	ros::Publisher m_posesPub, m_visPub;
 	ros::Timer updateTimer;
 	ros::Subscriber m_gps_pos_sub; // GPS Position subscriber
-
+	ros::Subscriber m_imu_sub; //IMU subscriber
+	
 	//! Random number generator
 	const gsl_rng_type *m_randomType;
 	gsl_rng *m_randomValue;

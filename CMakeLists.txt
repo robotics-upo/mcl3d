@@ -5,6 +5,7 @@ project(mcl3d)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_FLAGS "-Wconversion -Wsign-compare -Wfloat-conversion")
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
@@ -130,6 +131,7 @@ target_link_libraries(mcl3d_node
    ${catkin_LIBRARIES}
    ${gsl_LIBRARIES}
 )
+target_compile_options(mcl3d_node PRIVATE -w)
 
 #############
 ## Install ##
