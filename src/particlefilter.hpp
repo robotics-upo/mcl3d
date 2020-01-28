@@ -27,6 +27,8 @@
 #include <range_msgs/P2PRangeWithPose.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <sensor_msgs/Imu.h>
+#include <std_msgs/Float64.h>
+
 
 #include "mcl3d/earthlocation.h"
 
@@ -218,6 +220,10 @@ public:
 		if (m_use_imu) {
 			m_imu_sub = m_nh.subscribe("imu", 1, &ParticleFilter::imuCallback, this);
 		}
+		
+		// Heigh above the takeoff subsciber
+		m_heighAboveTakeoff = -10000.0;
+		m_heght_above_takeoff_sub = m_nh.subscribe("/height_above_takeoff", 1, &ParticleFilter::heighCallback, this);
 
 		// Launch publishers
 		m_posesPub = lnh.advertise<geometry_msgs::PoseArray>("particle_cloud", 1, true);
@@ -374,6 +380,11 @@ private:
 		m_yaw = m_yaw-m_imu_yaw_bias;
 	}
 
+	void heighCallback(const std_msgs::Float64::ConstPtr& msg)
+	{
+		m_heighAboveTakeoff = msg->data;
+	}
+	
 	//! Range-only data callback
 	void rangeDataCallback(const range_msgs::P2PRangeWithPose::ConstPtr &msg)
 	{
@@ -893,6 +904,8 @@ private:
 			newP[m].w = factor;
 			if(m_use_imu)
 				newP[m].a = m_yaw;
+			if(m_heighAboveTakeoff > -1000.0)
+				newP[m].z = m_heighAboveTakeoff;
 		}
 
 		//Asign the new particles set
@@ -1074,6 +1087,7 @@ private:
 	int m_n_gps_meas;
 	ros::Publisher m_gps_point_pub;
 	geometry_msgs::PointStamped m_gps_map_point;
+	double m_heighAboveTakeoff;
 
 	//! Node parameters
 	std::string m_inCloudTopic;
@@ -1091,6 +1105,7 @@ private:
 	ros::Timer updateTimer;
 	ros::Subscriber m_gps_pos_sub; // GPS Position subscriber
 	ros::Subscriber m_imu_sub; //IMU subscriber
+	ros::Subscriber m_heght_above_takeoff_sub; // GHeight above takeoff
 	
 	//! Random number generator
 	const gsl_rng_type *m_randomType;
