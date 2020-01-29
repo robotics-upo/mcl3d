@@ -125,6 +125,9 @@ public:
 
 		//Weight coefficients of gps,pcl and range measures
 		lnh.param("gps_w", m_wgps, (double)0.6);
+		if(!m_use_gps)
+			m_wgps=0;
+		
 		lnh.param("range_w", m_wr, (double)0);
 
 		if(m_wr+m_wgps > 1 || m_wr <0 || m_wgps < 0){
@@ -208,6 +211,7 @@ public:
 		if (m_useRageOnly)
 			m_rangeSub = m_nh.subscribe(m_inRangeTopic, 1, &ParticleFilter::rangeDataCallback, this);
 
+		newGpsData =false;
 		if (m_use_gps) {
 			m_gps_pos_sub = m_nh.subscribe("gps/fix", 1, &ParticleFilter::gpsCallback, this);
 			m_gps_point_pub = lnh.advertise<geometry_msgs::PointStamped>("gps_point",0);
@@ -468,11 +472,13 @@ private:
 			m_tfListener.transformPoint(m_globalFrameId, curr_gps_point, m_gps_map_point);
 			ROS_INFO("Map Relative Position: [%.3f, %.3f]", m_gps_map_point.point.x, m_gps_map_point.point.y);
 			m_use_gps=true;
+			newGpsData = true;
 		}
 		catch (tf::TransformException ex)
 		{
 			ROS_ERROR("Update GPS. Could not transform from GPS to global frame. Content: %s", ex.what());
 			m_use_gps=false;
+			newGpsData =false;
 		}
 		m_gps_point_pub.publish(m_gps_map_point);
 
@@ -530,7 +536,7 @@ private:
 
 		float delta_x, delta_y, delta_z, delta_a;
 		tf::StampedTransform odomTf = getOdometryShift(delta_x, delta_y, delta_z, delta_a);
-
+		std::cout << "Odom shift: " << delta_x << ", " << delta_y << ", " << delta_z << std::endl;
 		if (!predict(delta_x, delta_y, delta_z, delta_a))
 		{
 			ROS_ERROR("Prediction error!");
@@ -565,7 +571,11 @@ private:
 		catch (tf::TransformException ex)
 		{
 			ROS_ERROR("%s", ex.what());
-			return odomTf;
+			delta_x = 0;
+			delta_y = 0;
+			delta_z = 0;
+			delta_a = 0;
+			return m_lastOdomTf;
 		}
 
 		// Extract current robot roll and pitch
@@ -681,17 +691,20 @@ private:
 			m_p[i].wp = m_grid3d.computeCloudWeight(new_points);
 
 			// Evaluate the weight of the gps
-			if (m_use_gps) {
+			if (m_use_gps && newGpsData) {
 				double dist = sqrt((m_gps_map_point.point.x-m_p[i].x)*(m_gps_map_point.point.x-m_p[i].x) + 
 				                   (m_gps_map_point.point.y-m_p[i].y)*(m_gps_map_point.point.y-m_p[i].y) + 
 								   (m_gps_map_point.point.z-m_p[i].z)*(m_gps_map_point.point.z-m_p[i].z));
 				double k1 = 1.0 / (m_gps_dev * sqrt(2 * M_PI));
 				double k2 = 0.5 / (m_gps_dev * m_gps_dev);				
 				m_p[i].wgps = k1 * exp(-k2 * dist * dist);
+				//std::cout << "GPS update" << std::endl;
 			}
 			else
+			{
+				//std::cout << "NO GPS update" << std::endl;
 				m_p[i].wgps = 0.0;
-			
+			}
 			
 			// Evaluate the weight of the range sensors
 			if (m_rangeData.size() > 0 && m_useRageOnly)
@@ -720,14 +733,25 @@ private:
 				m_p[i].wr = 0;
 			}
 
-			if (m_use_gps) {
-				m_p[i].wgps /= wgps;
+			if (m_use_gps && newGpsData) {
+				if(fabs(wgps) > 0.0000001)
+					m_p[i].wgps /= wgps;
 			}
 			else {
 				m_p[i].wgps = 0;
 			}
 
-			m_p[i].w = m_p[i].wp * m_wp + m_p[i].wr * m_wr + m_p[i].wgps * m_wgps;
+			if(m_use_gps && newGpsData){
+				m_p[i].w = m_p[i].wp * m_wp + m_p[i].wr * m_wr + m_p[i].wgps * m_wgps;
+
+			}else{
+				double m_wp_temp,m_wr_temp;
+				m_wp_temp = m_wp/(m_wp+m_wr);
+				m_wr_temp = m_wr/(m_wp+m_wr);
+
+				m_p[i].w = m_p[i].wp * m_wp_temp + m_p[i].wr * m_wr_temp;
+
+			}
 		}
 
 		// Re-compute global TF according to new weight of samples
@@ -741,74 +765,8 @@ private:
 			resample();
 		}
 
-		return true;
-	}
-
-	// Update Particles with a GPS measure
-	bool update(const EarthLocation &e)
-	{
-		// Get position in local coordinates, TODO: transform to the the map frame
-		std::vector<double> local = e.toRelative(m_gps_fix_location);
-
-		ROS_INFO("GPS Coords: [%s]. GPS Relative Position: [%.3f, %.3f]", e.toString().c_str(), local[0], local[1]);
-
-		// The coordinates are in the gps frame we should transfrom them to the map frame
-		// The GPS frame points to the EAST in a point whose coords are known a priori
-		geometry_msgs::PointStamped curr_gps_point;
-		curr_gps_point.point.x = local[0];
-		curr_gps_point.point.y = local[1];
-		curr_gps_point.point.z = local[2];
-		curr_gps_point.header.frame_id = m_gpsFrameId;
-		curr_gps_point.header.stamp = ros::Time(0);
-
-		geometry_msgs::PointStamped map_point;
-		try
-		{
-			m_tfListener.waitForTransform(m_gpsFrameId, m_globalFrameId, ros::Time(0), ros::Duration(2.0));
-			m_tfListener.transformPoint(m_globalFrameId, curr_gps_point, map_point);
-			ROS_INFO("Map Relative Position: [%.3f, %.3f]", map_point.point.x, map_point.point.y);
-		}
-		catch (tf::TransformException ex)
-		{
-			ROS_ERROR("Update GPS. Could not transform from GPS to global frame. Content: %s", ex.what());
-			return false;
-		}
-		m_gps_point_pub.publish(map_point);
-
-		float wtgps = 0.0f;
-		for (int i = 0; i < m_p.size(); i++)
-		{
-			// Get particle information
-			float tx = m_p[i].x;
-			float ty = m_p[i].y;
-			float tz = m_p[i].z;
-			float sa = sin(m_p[i].a);
-			float ca = cos(m_p[i].a);
-
-			// Evaluate the weight of the point-cloud
-			m_p[i].wgps = computeGPSWeight(tx, ty, tz, map_point);
-
-			//Increase the summatory of weights
-			wtgps += m_p[i].wgps;
-		}
-
-		//Normalize all weights
-		for (int i = 0; i < (int)m_p.size(); i++)
-		{
-			m_p[i].wgps /= wtgps;
-			m_p[i].w = m_p[i].wgps;
-		}
-
-		// Re-compute global TF according to new weight of samples
-		// computeGlobalTf();
-
-		//Do the resampling if needed
-		m_nUpdates++;
-		if (m_nUpdates > m_resampleInterval)
-		{
-			m_nUpdates = 0;
-			resample();
-		}
+		// Reset GPS data flag
+		newGpsData = false;
 
 		return true;
 	}
@@ -1079,6 +1037,7 @@ private:
 
 	// GPS updates
 	float m_gps_dev;
+	bool newGpsData;
 	
 	bool m_use_gps, m_use_gps_alt, m_use_imu;
 	std::vector<double> m_gps_pose, m_gps_fix_coords;
