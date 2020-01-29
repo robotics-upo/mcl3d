@@ -707,9 +707,7 @@ private:
 
 		// Clean the range buffer
 		m_rangeData.clear();
-		if(wtp<1e-9){
 
-		}
 		//Normalize all weights
 		for (int i = 0; i < (int)m_p.size(); i++)
 		{
@@ -727,11 +725,11 @@ private:
 			}
 
 			if (m_use_gps && newGpsData) {
-				if(fabs(wgps) > 0.0000001)
+				if(wgps<1e-9){
+					m_p[i].wgps = 1.0/(float)m_p.size();
+				}else{
 					m_p[i].wgps /= wgps;
-			}
-			else {
-				m_p[i].wgps = 0;
+				}
 			}
 
 			if(m_use_gps && newGpsData){
