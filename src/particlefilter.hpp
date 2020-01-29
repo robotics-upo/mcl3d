@@ -438,16 +438,11 @@ private:
 		if (!m_init)
 			return;
 
-		// float delta_x, delta_y, delta_z, delta_a;
-		// tf::StampedTransform odomTf = getOdometryShift(delta_x, delta_y, delta_z, delta_a);
+		float gps_dev = sqrt(msg->position_covariance[0]) * 1.5; // TODO: gps factor add to parameter list
+		gps_dev = std::max(m_gps_dev, gps_dev);
 
-		// if (!predict(delta_x, delta_y, delta_z, delta_a))
-		// {
-		// 	ROS_ERROR("Prediction error!");
-		// 	return;
-		// }
-		// // Update time and transform information
-		// m_lastOdomTf = odomTf;
+		m_k1_gps = 1.0 / (gps_dev);
+		m_k2_gps = 0.5 / (gps_dev * gps_dev);
 
 		m_last_gps_measure.setLongitude(msg->longitude);
 		m_last_gps_measure.setLatitude(msg->latitude);
@@ -482,15 +477,6 @@ private:
 		}
 		m_gps_point_pub.publish(m_gps_map_point);
 
-		// // Perform particle update based on current point-cloud
-		// if (!update(m_last_gps_measure))
-		// {
-		// 	ROS_ERROR("Update error!");
-		// 	return;
-		// }
-
-		// // Publish particles
-		// publishParticles();
 		ROS_INFO("Inside GPS Callback");
 	}
 
@@ -691,14 +677,9 @@ private:
 			m_p[i].wp = m_grid3d.computeCloudWeight(new_points);
 
 			// Evaluate the weight of the gps
-			if (m_use_gps && newGpsData) {
-				double dist = sqrt((m_gps_map_point.point.x-m_p[i].x)*(m_gps_map_point.point.x-m_p[i].x) + 
-				                   (m_gps_map_point.point.y-m_p[i].y)*(m_gps_map_point.point.y-m_p[i].y) + 
-								   (m_gps_map_point.point.z-m_p[i].z)*(m_gps_map_point.point.z-m_p[i].z));
-				double k1 = 1.0 / (m_gps_dev * sqrt(2 * M_PI));
-				double k2 = 0.5 / (m_gps_dev * m_gps_dev);				
-				m_p[i].wgps = k1 * exp(-k2 * dist * dist);
-				//std::cout << "GPS update" << std::endl;
+			if (m_use_gps) {
+						
+				m_p[i].wgps = computeGPSWeight(m_p[i].x, m_p[i].y, m_p[i].z, m_gps_map_point);
 			}
 			else
 			{
@@ -922,11 +903,10 @@ private:
 			return -1;
 	}
 
-	float computeGPSWeight(float x, float y, float z, geometry_msgs::PointStamped &p)
-	{
-		static const float k1 = 1.0 / (m_gps_dev);
-		static const float k2 = 0.5 / (m_gps_dev * m_gps_dev);
-		float r ;
+	float computeGPSWeight(float x, float y, float z, geometry_msgs::PointStamped &p) const
+	{		
+
+		float r;
 		if(m_use_gps_alt){
 			r = sqrt((p.point.x - x) * (p.point.x - x) +
 					   (p.point.y - y) * (p.point.y - y) +
@@ -936,7 +916,7 @@ private:
 						   (p.point.y - y) * (p.point.y - y)); 
 		}
 
-		return k1 * exp(-k2 * (r * r));
+		return m_k1_gps * exp(-m_k2_gps * (r * r));
 	}
 
 	void computeDev(float &mX, float &mY, float &mZ, float &mA, float &devX, float &devY, float &devZ, float &devA)
@@ -1038,6 +1018,7 @@ private:
 	// GPS updates
 	float m_gps_dev;
 	bool newGpsData;
+	float m_k1_gps, m_k2_gps;
 	
 	bool m_use_gps, m_use_gps_alt, m_use_imu;
 	std::vector<double> m_gps_pose, m_gps_fix_coords;
