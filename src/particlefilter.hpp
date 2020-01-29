@@ -103,8 +103,9 @@ public:
 
 		// Read range-only parameters
 		std::string id;
-		if (!lnh.getParam("use_range_only", m_useRageOnly))
-			m_useRageOnly = false;
+		if (!lnh.getParam("use_range_only", m_useRangeOnly))
+			m_useRangeOnly = false;
+		
 		if (!lnh.getParam("in_range", m_inRangeTopic))
 			m_inRangeTopic = "range";
 		if (!lnh.getParam("range_only_tag", id))
@@ -118,7 +119,7 @@ public:
 
 		// Read GPS parameteres
 		lnh.param("use_gps", m_use_gps, false);
-		lnh.param("use_gps_altitude",m_use_gps_alt,true);
+		lnh.param("use_gps_altitude",m_use_gps_alt,false);
 		lnh.param("gps_dev", m_gps_dev, (float)1.0);
 		// lnh.param("min_sat", m_gps_min_sat, 3);
 		// lnh.param("gps_pose", m_gps_pose, {0,0,0,0}); // Relative coordinates of the gps fix in the map (x,y,z,yaw)
@@ -129,7 +130,9 @@ public:
 			m_wgps=0;
 		
 		lnh.param("range_w", m_wr, (double)0);
-
+		if(!m_useRangeOnly){
+			m_wr=0;
+		}	
 		if(m_wr+m_wgps > 1 || m_wr <0 || m_wgps < 0){
 			ROS_FATAL("Non valids Weights wr %f, w gps %f", m_wr, m_wgps);
 		}
@@ -208,7 +211,7 @@ public:
 		
 		m_initialPoseSub = lnh.subscribe("/initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
 
-		if (m_useRageOnly)
+		if (m_useRangeOnly)
 			m_rangeSub = m_nh.subscribe(m_inRangeTopic, 1, &ParticleFilter::rangeDataCallback, this);
 
 		newGpsData =false;
@@ -219,8 +222,10 @@ public:
 		
 		// Read IMU parameteres
 		m_roll = m_pitch = m_yaw = 0.0;
-		lnh.param("imu_yaw_bias", m_imu_yaw_bias, 0.0);
+		lnh.param("imu_yaw_bias", m_imu_yaw_bias, -1.57);
+		m_yaw = m_imu_yaw_bias;
 		lnh.param("use_imu", m_use_imu, false);
+		new_imu_data=false;
 		if (m_use_imu) {
 			m_imu_sub = m_nh.subscribe("imu", 1, &ParticleFilter::imuCallback, this);
 		}
@@ -382,6 +387,7 @@ private:
 		tf::Quaternion q(msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
 		tf::Matrix3x3(q).getRPY(m_roll, m_pitch, m_yaw);	
 		m_yaw = m_yaw-m_imu_yaw_bias;
+		new_imu_data=true;
 	}
 
 	void heighCallback(const std_msgs::Float64::ConstPtr& msg)
@@ -677,7 +683,7 @@ private:
 			m_p[i].wp = m_grid3d.computeCloudWeight(new_points);
 
 			// Evaluate the weight of the gps
-			if (m_use_gps) {
+			if (m_use_gps && newGpsData) {
 						
 				m_p[i].wgps = computeGPSWeight(m_p[i].x, m_p[i].y, m_p[i].z, m_gps_map_point);
 			}
@@ -688,7 +694,7 @@ private:
 			}
 			
 			// Evaluate the weight of the range sensors
-			if (m_rangeData.size() > 0 && m_useRageOnly)
+			if (m_rangeData.size() > 0 && m_useRangeOnly)
 				m_p[i].wr = computeRangeWeight(tx, ty, tz);
 			else
 				m_p[i].wr = 0;
@@ -701,13 +707,19 @@ private:
 
 		// Clean the range buffer
 		m_rangeData.clear();
+		if(wtp<1e-9){
 
+		}
 		//Normalize all weights
 		for (int i = 0; i < (int)m_p.size(); i++)
 		{
-			m_p[i].wp /= wtp;
+			if(wtp<1e-9){
+				m_p[i].wp = 1.0/(float)m_p.size();
+			}else{
+				m_p[i].wp /= wtp;
+			}
 
-			if (m_rangeData.size() > 0 && m_useRageOnly)
+			if (m_rangeData.size() > 0 && m_useRangeOnly)
 			{
 				m_p[i].wr /= wtr;
 			} else {
@@ -729,9 +741,7 @@ private:
 				double m_wp_temp,m_wr_temp;
 				m_wp_temp = m_wp/(m_wp+m_wr);
 				m_wr_temp = m_wr/(m_wp+m_wr);
-
 				m_p[i].w = m_p[i].wp * m_wp_temp + m_p[i].wr * m_wr_temp;
-
 			}
 		}
 
@@ -841,8 +851,10 @@ private:
 			}
 			newP[m] = m_p[i];
 			newP[m].w = factor;
-			if(m_use_imu)
+			if(m_use_imu && new_imu_data){
+				new_imu_data=false;
 				newP[m].a = m_yaw;
+			}
 			if(m_heighAboveTakeoff > -1000.0)
 				newP[m].z = m_heighAboveTakeoff;
 		}
@@ -984,7 +996,7 @@ private:
 
 	//! Particles roll, pich  and yaw (given by IMU)
 	double m_roll, m_pitch, m_yaw, m_imu_yaw_bias;
-
+	bool new_imu_data;
 	//! Number of particles in the filter
 	int m_maxParticles;
 	int m_minParticles;
@@ -1010,7 +1022,7 @@ private:
 
 	//! Range only updates
 	uint64_t m_tagId;
-	bool m_useRageOnly;
+	bool m_useRangeOnly;
 	std::vector<rangeData> m_rangeData;
 	std::string m_inRangeTopic;
 	float m_rangeOnlyDev;
