@@ -98,8 +98,12 @@ public:
 		if(!lnh.getParam("global_frame_id", m_globalFrameId))
 			m_globalFrameId = "map";	
 
-		if (!lnh.getParam("use_2d_odom", m_use_2d_odom)) {
-			m_use_2d_odom = true;
+		if (!lnh.getParam("use_imu", m_use_imu)) {
+			m_use_imu = true;
+		}
+
+		if (!lnh.getParam("use_2d_odom", m_use_imu)) {
+			m_use_2d_odom = false;
 		}
 		
 		// Read range-only parameters
@@ -543,9 +547,9 @@ private:
 		sensor_msgs::PointCloud2Iterator<float> iterY(cloud, "y");
 		sensor_msgs::PointCloud2Iterator<float> iterZ(cloud, "z");
 		points.resize(cloud.width);
-		for(int i=0; i<cloud.width; ++i, ++iterX, ++iterY, ++iterZ)
+		for(int i=0; i<cloud.width; ++i, ++iterX, ++iterY, ++iterZ) 
 		{
-			if (m_use_2d_odom) {
+			if (m_use_imu) {
 				points[i].x = *iterX*r00 + *iterY*r01 + *iterZ*r02;
 				points[i].y = *iterX*r10 + *iterY*r11 + *iterZ*r12;
 				points[i].z = *iterX*r20 + *iterY*r21 + *iterZ*r22;
@@ -916,7 +920,7 @@ private:
 	bool m_init;
 
 	//! If true, the odometry is assumed 2d and thus we proyect it into 3d
-	bool m_use_2d_odom;
+	bool m_use_imu, m_use_2d_odom;
 	
 	//! Indicates that the local transfrom for the pint-cloud is cached
 	bool m_tfCache;
