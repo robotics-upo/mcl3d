@@ -230,9 +230,9 @@ public:
 			m_imu_sub = m_nh.subscribe("imu", 1, &ParticleFilter::imuCallback, this);
 		}
 		
-		// Heigh above the takeoff subsciber
-		m_heighAboveTakeoff = -10000.0;
-		m_heght_above_takeoff_sub = m_nh.subscribe("/height_above_takeoff", 1, &ParticleFilter::heighCallback, this);
+		// Height above the takeoff subsciber
+		m_heightAboveTakeoff = -10000.0;
+		m_height_above_takeoff_sub = m_nh.subscribe("/height_above_takeoff", 1, &ParticleFilter::heightCallback, this);
 
 		// Launch publishers
 		m_posesPub = lnh.advertise<geometry_msgs::PoseArray>("particle_cloud", 1, true);
@@ -390,9 +390,9 @@ private:
 		new_imu_data=true;
 	}
 
-	void heighCallback(const std_msgs::Float64::ConstPtr& msg)
+	void heightCallback(const std_msgs::Float64::ConstPtr& msg)
 	{
-		m_heighAboveTakeoff = msg->data;
+		m_heightAboveTakeoff = msg->data;
 	}
 	
 	//! Range-only data callback
@@ -664,6 +664,9 @@ private:
 			if (!m_grid3d.isIntoMap(tx, ty, tz))
 			{
 				m_p[i].w = 0;
+				m_p[i].wp = 0;
+				m_p[i].wgps = 0;
+				m_p[i].wr = 0;
 				continue;
 			}
 
@@ -853,8 +856,8 @@ private:
 				new_imu_data=false;
 				newP[m].a = m_yaw;
 			}
-			if(m_heighAboveTakeoff > -1000.0)
-				newP[m].z = m_heighAboveTakeoff;
+			if(m_heightAboveTakeoff > -1000.0)
+				newP[m].z = m_heightAboveTakeoff;
 		}
 
 		//Asign the new particles set
@@ -931,25 +934,7 @@ private:
 
 	void computeDev(float &mX, float &mY, float &mZ, float &mA, float &devX, float &devY, float &devZ, float &devA)
 	{
-		// Compute mean value from particles
-		devX = mX = 0.0;
-		devY = mY = 0.0;
-		devZ = mZ = 0.0;
-		devA = mA = 0.0;
-		for (int i = 0; i < m_p.size(); i++)
-		{
-			mX += m_p[i].w * m_p[i].x;
-			mY += m_p[i].w * m_p[i].y;
-			mZ += m_p[i].w * m_p[i].z;
-			mA += m_p[i].w * m_p[i].a;
-		}
-		for (int i = 0; i < m_p.size(); i++)
-		{
-			devX += m_p[i].w * (m_p[i].x - mX) * (m_p[i].x - mX);
-			devY += m_p[i].w * (m_p[i].y - mY) * (m_p[i].y - mY);
-			devZ += m_p[i].w * (m_p[i].z - mZ) * (m_p[i].z - mZ);
-			devA += m_p[i].w * (m_p[i].a - mA) * (m_p[i].a - mA);
-		}
+		computeVar(mX, mY, mZ, mA, devX, devY, devZ, devA);
 		devX = sqrt(devX);
 		devY = sqrt(devY);
 		devZ = sqrt(devZ);
@@ -1037,7 +1022,7 @@ private:
 	int m_n_gps_meas;
 	ros::Publisher m_gps_point_pub;
 	geometry_msgs::PointStamped m_gps_map_point;
-	double m_heighAboveTakeoff;
+	double m_heightAboveTakeoff;
 
 	//! Node parameters
 	std::string m_inCloudTopic;
@@ -1055,7 +1040,7 @@ private:
 	ros::Timer updateTimer;
 	ros::Subscriber m_gps_pos_sub; // GPS Position subscriber
 	ros::Subscriber m_imu_sub; //IMU subscriber
-	ros::Subscriber m_heght_above_takeoff_sub; // GHeight above takeoff
+	ros::Subscriber m_height_above_takeoff_sub; // Gheightt above takeoff
 	
 	//! Random number generator
 	const gsl_rng_type *m_randomType;
