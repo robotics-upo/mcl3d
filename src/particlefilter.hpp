@@ -15,6 +15,7 @@
 #include <tf/transform_listener.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <geometry_msgs/PoseArray.h>
+#include <sensor_msgs/NavSatFix.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Imu.h>
 #include <vector>
@@ -26,6 +27,7 @@
 #include "grid3d.hpp"
 #include <time.h>
 #include <range_msgs/P2PRangeWithPose.h>
+#include "mcl3d/earthlocation.h"
 
 using std::isnan;
 
@@ -55,6 +57,7 @@ public:
 		float w;
 		float wp;
 		float wr;
+		float wgps;
 	};
 
 	//! Range-only data class
@@ -97,12 +100,14 @@ public:
 			m_odomFrameId = "odom";	
 		if(!lnh.getParam("global_frame_id", m_globalFrameId))
 			m_globalFrameId = "map";	
+		if (!lnh.getParam("gps_frame_id", m_gpsFrameId))
+			m_gpsFrameId = "gps";
 
 		if (!lnh.getParam("use_imu", m_use_imu)) {
 			m_use_imu = true;
 		}
 
-		if (!lnh.getParam("use_2d_odom", m_use_imu)) {
+		if (!lnh.getParam("use_2d_odom", m_use_2d_odom)) {
 			m_use_2d_odom = false;
 		}
 		
@@ -125,6 +130,22 @@ public:
 		if(!lnh.getParam("range_only_dev", m_rangeOnlyDev))
             m_rangeOnlyDev = -1.0;
 
+		// GPS
+		lnh.param("use_gps", m_use_gps, false);
+		lnh.param("use_gps_altitude",m_use_gps_alt,false);
+		lnh.param("gps_dev", m_gps_dev, (float)1.0);
+		double lat, longitude, alt;
+		m_gps_fix_coords.resize(3);
+		lnh.param("gps_fix_latitude", lat, 47.0); // Latitude and longitude in decimal degrees
+		m_gps_fix_coords[0] = lat;
+		lnh.param("gps_fix_longitude", longitude, -5.0); // Latitude and longitude in decimal degrees
+		m_gps_fix_coords[1] = longitude;
+		lnh.param("gps_fix_altitude", alt, 30.0); // Altitude in meters
+		m_gps_fix_coords[2] = alt;
+
+		m_gps_fix_location = EarthLocation(m_gps_fix_coords);
+		ROS_INFO("GPS Coordinates: %s", m_gps_fix_location.toString().c_str());
+
 		// Read amcl parameters
 		if(!lnh.getParam("update_rate", m_updateRate))
 			m_updateRate = 10.0;
@@ -142,10 +163,6 @@ public:
 			m_odomZMod = 0.2;
 		if(!lnh.getParam("odom_a_mod", m_odomAMod))
 			m_odomAMod = 0.2;
-		if(!lnh.getParam("odom_a_mod_min", m_odomAModMin))
-			m_odomAModMin = 0.05;
-		if(!lnh.getParam("odom_z_mod_min", m_odomZModMin))
-			m_odomZModMin = 0.05;
 		if(!lnh.getParam("initial_x", m_initX))
 			m_initX = 0.0;
 		if(!lnh.getParam("initial_y", m_initY))
@@ -172,6 +189,11 @@ public:
             m_initZOffset = 0.0;  
         if(!lnh.getParam("cloud_voxel_size", m_voxelSize))
             m_voxelSize = 0.05;  
+
+		lnh.param("odom_x_bias", m_odomXBias, 0.05);
+		lnh.param("odom_y_bias", m_odomYBias, 0.05);
+		lnh.param("odom_z_bias", m_odomZBias, 0.05);
+		lnh.param("odom_a_bias", m_odomABias, 0.05);
 		
 		m_nUpdates = 0;
 		m_init = false;
@@ -184,8 +206,20 @@ public:
 		m_initialPoseSub = lnh.subscribe("initial_pose", 2, &ParticleFilter::initialPoseReceived, this);
 		if(m_useRageOnly)
 			m_rangeSub = m_nh.subscribe(m_inRangeTopic, 1, &ParticleFilter::rangeDataCallback, this);
+
+		newGpsData =false;
+		if (m_use_gps) {
+			m_gps_pos_sub = m_nh.subscribe("gps/fix", 1, &ParticleFilter::gpsCallback, this);
+			m_gps_point_pub = lnh.advertise<geometry_msgs::PointStamped>("gps_point",0);
+		}
+
 		if(m_useImu)
 			m_imuSub = m_nh.subscribe("imu", 1, &ParticleFilter::imuCallback, this);
+
+		// Read IMU parameteres
+		m_roll = m_pitch = m_yaw = 0.0;
+		lnh.param("imu_yaw_bias", m_imu_yaw_bias, -1.57);
+		m_yaw = m_imu_yaw_bias;
 
 		// Launch publishers
 		m_posesPub = lnh.advertise<geometry_msgs::PoseArray>("particle_cloud", 1, true);
@@ -238,13 +272,13 @@ public:
 	//! Check motion and time thresholds for AMCL update
 	bool checkUpdateThresholds()
 	{
-		// Publish current TF from odom to map
-		m_tfBr.sendTransform(tf::StampedTransform(m_lastGlobalTf, ros::Time::now(), m_globalFrameId, m_odomFrameId));
-		
 		// If the filter is not initialized then exit
 		if(!m_init)
 			return false;
 					
+		// Publish current TF from odom to map
+		m_tfBr.sendTransform(tf::StampedTransform(m_lastGlobalTf, ros::Time::now(), m_globalFrameId, m_odomFrameId));
+		
 		// Compute odometric translation and rotation since last update 
 		tf::StampedTransform odomTf;
 		try
@@ -396,6 +430,54 @@ private:
 			m_rangeData[index].range.push_back(msg->range);
 	}
 
+	//! GPS fix callback
+	void gpsCallback(const sensor_msgs::NavSatFixConstPtr &msg)
+	{
+		// If the filter is not initialized then exit
+		if (!m_init)
+			return;
+
+		float gps_dev = sqrt(msg->position_covariance[0]) * 1.5; // TODO: gps factor add to parameter list
+		gps_dev = std::max(m_gps_dev, gps_dev);
+
+		m_k1_gps = 1.0 / (gps_dev*sqrt(2*M_PI));
+		m_k2_gps = 0.5 / (gps_dev * gps_dev);
+
+		m_last_gps_measure.setLongitude(msg->longitude);
+		m_last_gps_measure.setLatitude(msg->latitude);
+		m_last_gps_measure.setAltitude(msg->altitude);
+
+		std::vector<double> local = m_last_gps_measure.toRelative(m_gps_fix_location);
+
+		ROS_INFO("GPS Coords: [%s]. GPS Relative Position: [%.3f, %.3f]", m_last_gps_measure.toString().c_str(), local[0], local[1]);
+
+		// The coordinates are in the gps frame we should transfrom them to the map frame
+		// The GPS frame points to the EAST in a point whose coords are known a priori
+		geometry_msgs::PointStamped curr_gps_point;
+		curr_gps_point.point.x = local[0];
+		curr_gps_point.point.y = local[1];
+		curr_gps_point.point.z = local[2];
+		curr_gps_point.header.frame_id = m_gpsFrameId;
+		curr_gps_point.header.stamp = ros::Time(0);
+
+		try
+		{
+			m_tfListener.waitForTransform(m_gpsFrameId, m_globalFrameId, ros::Time(0), ros::Duration(2.0));
+			m_tfListener.transformPoint(m_globalFrameId, curr_gps_point, m_gps_map_point);
+			ROS_INFO("Map Relative Position: [%.3f, %.3f]", m_gps_map_point.point.x, m_gps_map_point.point.y);
+			m_use_gps=true;
+			newGpsData = true;
+		}
+		catch (tf::TransformException ex)
+		{
+			ROS_ERROR("Update GPS. Could not transform from GPS to global frame. Content: %s", ex.what());
+			m_use_gps=false;
+			newGpsData =false;
+		}
+		m_gps_point_pub.publish(m_gps_map_point);
+	}
+
+
 	//! 3D point-cloud callback
 	void pointcloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud)
 	{		
@@ -505,10 +587,10 @@ private:
 		}
 			
 		float xDev, yDev, zDev, aDev;
-		xDev = fabs(delta_x*m_odomXMod);
-		yDev = fabs(delta_y*m_odomYMod);
-		zDev = fabs(delta_z*m_odomZMod)+fabs(m_odomZModMin);
-		aDev = fabs(delta_a*m_odomAMod)+fabs(m_odomAModMin);
+		xDev = fabs(delta_x*m_odomXMod) + m_odomXBias;
+		yDev = fabs(delta_y*m_odomYMod) + m_odomYBias;
+		zDev = fabs(delta_z*m_odomZMod) + m_odomZBias;
+		aDev = fabs(delta_a*m_odomAMod) + m_odomABias;
 		
 		//Make a prediction for all particles according to the odometry
 		for(int i=0; i<(int)m_p.size(); i++)
@@ -580,8 +662,11 @@ private:
 			// Check the particle is into the map
 			if(!m_grid3d.isIntoMap(tx, ty, tz))
 			{
-				m_p[i].w = 0;
-				continue;
+			 	m_p[i].w = 0;
+				m_p[i].wp = 0;
+				m_p[i].wgps = 0;
+				m_p[i].wr = 0;
+			 	continue;
 			}
 			
 			// Transform every point of the point-cloud to current particle position
@@ -604,9 +689,18 @@ private:
 				m_p[i].wr = computeRangeWeight(tx, ty, tz);
 			else
 				m_p[i].wr = 0;
+
+			// Evaluate the weight of the gps
+			if (m_use_gps && newGpsData) {
+				m_p[i].wgps = computeGPSWeight(m_p[i].x, m_p[i].y, m_p[i].z, m_gps_map_point);
+			}
+			else
+			{
+				//std::cout << "NO GPS update" << std::endl;
+				m_p[i].wgps = 0.0;
+			}
 				
 			//Increase the summatory of weights
-			wtp += m_p[i].wp;
 			wtr += m_p[i].wr;
 		}
 		
@@ -616,19 +710,27 @@ private:
 		//Normalize all weights
 		for(int i=0; i<(int)m_p.size(); i++)
 		{
-			m_p[i].wp /= wtp;
+			if(m_use_gps && newGpsData){
+				m_p[i].w = m_p[i].wp * m_p[i].wgps;
+			} else {
+				m_p[i].w = m_p[i].wp;
+			}
+			wtp += m_p[i].w;
+		}	
+
+		for(int i=0; i<(int)m_p.size(); i++) {
+			if (wtp > 0.0) {
+				m_p[i].w /= wtp;
+			} else {
+				m_p[i].w = 1.0/static_cast<float>(m_p.size());
+			}
+			
 			if(m_rangeData.size() > 0 && m_useRageOnly)
 			{
 				m_p[i].wr /= wtr;
-				m_p[i].w = m_p[i].wp*0.5 + m_p[i].wr*0.5;  
-			}
-			else
-			{
-				m_p[i].wr = 0;
-				m_p[i].w = m_p[i].wp;  
-			}
-			
-		}	
+				m_p[i].w = m_p[i].w*0.5 + m_p[i].wr*0.5;  
+			} 
+		}
 		
 		// Re-compute global TF according to new weight of samples
 		computeGlobalTfAndPose();
@@ -775,6 +877,22 @@ private:
 		m_lastPose.pose.covariance[35] = vara*10;
 
 		m_pose_cov_pub.publish(m_lastPose);
+	}
+
+	float computeGPSWeight(float x, float y, float z, geometry_msgs::PointStamped &p) const
+	{		
+
+		float r;
+		if(m_use_gps_alt){
+			r = sqrt((p.point.x - x) * (p.point.x - x) +
+					   (p.point.y - y) * (p.point.y - y) +
+						(p.point.z - z) * (p.point.z - z));
+		}else{
+			r = sqrt((p.point.x - x) * (p.point.x - x) +
+						   (p.point.y - y) * (p.point.y - y)); 
+		}
+
+		return m_k1_gps * exp(-m_k2_gps * (r * r));
 	}
 
 	double computeFiducialWeight(double dist_sq, double dist_a_sq, double sigma) {
@@ -930,7 +1048,7 @@ private:
 	std::vector<particle> m_p;
 	
 	//! Particles roll and pich (given by IMU)
-	double m_roll, m_pitch;
+	double m_roll, m_pitch, m_yaw, m_imu_yaw_bias;
 	bool m_useImu;
 	
 	//! Number of particles in the filter
@@ -939,6 +1057,7 @@ private:
 	
 	//! Odometry characterization
 	double m_odomXMod, m_odomYMod, m_odomZMod, m_odomAMod, m_odomAModMin, m_odomZModMin;
+	double m_odomXBias,m_odomYBias,m_odomZBias, m_odomABias; 
     double m_initX, m_initY, m_initZ, m_initA, m_initZOffset;
 	double m_initXDev, m_initYDev, m_initZDev, m_initADev;
 	double m_voxelSize;
@@ -981,7 +1100,19 @@ private:
 	ros::Publisher m_posesPub, m_visPub, m_pose_cov_pub;
 	ros::Timer updateTimer;
 
-
+	// GPS updates
+	float m_gps_dev;
+	bool newGpsData;
+	float m_k1_gps, m_k2_gps;
+	
+	bool m_use_gps, m_use_gps_alt;
+	std::vector<double> m_gps_pose, m_gps_fix_coords;
+	EarthLocation m_gps_fix_location, m_last_gps_measure;
+	std::string m_gpsFrameId;
+	int m_n_gps_meas;
+	ros::Publisher m_gps_point_pub;
+	geometry_msgs::PointStamped m_gps_map_point;
+	ros::Subscriber m_gps_pos_sub; // GPS Position subscriber
 	
 	//! Random number generator
 	const gsl_rng_type *m_randomType;
