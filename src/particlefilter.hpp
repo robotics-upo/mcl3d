@@ -472,7 +472,7 @@ private:
 			m_tfListener.waitForTransform(m_gpsFrameId, m_globalFrameId, ros::Time(0), ros::Duration(2.0));
 			m_tfListener.transformPoint(m_globalFrameId, curr_gps_point, m_gps_map_point);
 			ROS_INFO("Map Relative Position: [%.3f, %.3f]", m_gps_map_point.point.x, m_gps_map_point.point.y);
-			m_use_gps=true;
+			m_use_gps = true;
 			newGpsData = true;
 		}
 		catch (tf::TransformException ex)
@@ -481,9 +481,10 @@ private:
 			m_use_gps=false;
 			newGpsData =false;
 		}
+		if (m_heightAboveTakeoff > -1000.0) {
+			m_gps_map_point.point.z = m_heightAboveTakeoff + 0.5;
+		}
 		m_gps_point_pub.publish(m_gps_map_point);
-
-		ROS_INFO("Inside GPS Callback");
 	}
 
 	//! 3D point-cloud callback
