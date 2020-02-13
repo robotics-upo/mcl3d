@@ -595,6 +595,11 @@ private:
 		yDev = m_odomYBias + fabs(delta_y * m_odomYMod);
 		zDev = m_odomZBias + fabs(delta_z * m_odomZMod);
 		aDev = fabs(delta_a * m_odomAMod);
+		if(m_use_imu && new_imu_data)
+		{
+			delta_a = 0.0;
+			aDev = 0.1;
+		}
 
 		//Make a prediction for all particles according to the odometry
 		for (int i = 0; i < (int)m_p.size(); i++)
@@ -853,7 +858,6 @@ private:
 			newP[m] = m_p[i];
 			newP[m].w = factor;
 			if(m_use_imu && new_imu_data){
-				new_imu_data=false;
 				newP[m].a = m_yaw;
 			}
 			if(m_heightAboveTakeoff > -1000.0)
