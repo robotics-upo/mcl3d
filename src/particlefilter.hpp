@@ -862,7 +862,7 @@ private:
 				newP[m].a = m_yaw;
 			}
 			if(m_heightAboveTakeoff > -1000.0)
-				newP[m].z = m_heightAboveTakeoff;
+				newP[m].z = m_heightAboveTakeoff+m_initZOffset;
 		}
 
 		//Asign the new particles set
