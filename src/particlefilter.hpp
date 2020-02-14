@@ -18,6 +18,7 @@
 #include <sensor_msgs/NavSatFix.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Imu.h>
+#include <std_msgs/Float64.h>
 #include <vector>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
@@ -216,6 +217,10 @@ public:
 		if(m_useImu)
 			m_imuSub = m_nh.subscribe("imu", 1, &ParticleFilter::imuCallback, this);
 
+		// Height above the takeoff subscriber
+		m_heightAboveTakeoff = -10000.0;
+		m_height_above_takeoff_sub = m_nh.subscribe("/height_above_takeoff", 1, &ParticleFilter::heightCallback, this);
+
 		// Read IMU parameteres
 		m_roll = m_pitch = m_yaw = 0.0;
 		lnh.param("imu_yaw_bias", m_imu_yaw_bias, -1.57);
@@ -388,6 +393,11 @@ private:
 		}
 	}
 
+	void heightCallback(const std_msgs::Float64::ConstPtr& msg)
+	{
+		m_heightAboveTakeoff = msg->data;
+	}
+
 	//! Range-only data callback
 	void rangeDataCallback(const range_msgs::P2PRangeWithPose::ConstPtr& msg)
 	{
@@ -473,6 +483,10 @@ private:
 			ROS_ERROR("Update GPS. Could not transform from GPS to global frame. Content: %s", ex.what());
 			m_use_gps=false;
 			newGpsData =false;
+		}
+
+		if (m_heightAboveTakeoff > -1000.0) {
+			m_gps_map_point.point.z = m_heightAboveTakeoff + 0.5;
 		}
 		m_gps_point_pub.publish(m_gps_map_point);
 	}
@@ -733,7 +747,7 @@ private:
 		}
 		
 		// Re-compute global TF according to new weight of samples
-		computeGlobalTfAndPose();
+		// computeGlobalTfAndPose();
 
 		//Do the resampling if needed
 		m_nUpdates++;
@@ -838,6 +852,8 @@ private:
 			}
 			newP[m] = m_p[i];
 			newP[m].w = factor;
+			if(m_heightAboveTakeoff > -1000.0)
+				newP[m].z = m_heightAboveTakeoff;
 		}
 		
 		//Asign the new particles set
@@ -1097,6 +1113,7 @@ private:
 	tf::TransformBroadcaster m_tfBr;
 	tf::TransformListener m_tfListener;
     ros::Subscriber m_pcSub, m_initialPoseSub, m_odomTfSub, m_rangeSub, m_imuSub;
+	ros::Subscriber m_height_above_takeoff_sub; // Gheightt above takeoff
 	ros::Publisher m_posesPub, m_visPub, m_pose_cov_pub;
 	ros::Timer updateTimer;
 
@@ -1109,9 +1126,9 @@ private:
 	std::vector<double> m_gps_pose, m_gps_fix_coords;
 	EarthLocation m_gps_fix_location, m_last_gps_measure;
 	std::string m_gpsFrameId;
-	int m_n_gps_meas;
 	ros::Publisher m_gps_point_pub;
 	geometry_msgs::PointStamped m_gps_map_point;
+	double m_heightAboveTakeoff;
 	ros::Subscriber m_gps_pos_sub; // GPS Position subscriber
 	
 	//! Random number generator
