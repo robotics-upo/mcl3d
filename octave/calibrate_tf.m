@@ -1,7 +1,7 @@
 function trans = calibrate_tf(gps_points, map_points)
-    local = zeros(size(gps_points))
-    A = zeros([size(gps_points,1)*2, 4])
-    b = zeros(size(gps_points,1)*2 , 1)
+    local = zeros(size(gps_points));
+    A = zeros([size(gps_points,1)*2, 4]);
+    b = zeros(size(gps_points,1)*2 , 1);
     for i=1:size(gps_points,1)
       local(i,:) = gps_to_local(gps_points(1,:), gps_points(i,:));
       A (2*i - 1, 1) = local(i,1);
