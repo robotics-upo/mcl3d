@@ -1,0 +1,45 @@
+# Created by Octave 4.2.2, Fri Feb 14 10:24:40 2020 CET <chur@bumblebee-GF62-7RE>
+# name: ans
+# type: scalar
+3
+
+
+# name: gps_1
+# type: matrix
+# rows: 1
+# columns: 2
+ 37.5616213997 -6.03229469922
+
+
+# name: gps_2
+# type: matrix
+# rows: 1
+# columns: 2
+ 37.5616581091 -6.03238332159
+
+
+# name: gps_3
+# type: matrix
+# rows: 1
+# columns: 2
+ 37.5616718374 -6.0322318439
+
+
+# name: gps_points
+# type: matrix
+# rows: 3
+# columns: 2
+ 37.5616213997 -6.03229469922
+ 37.5616581091 -6.03238332159
+ 37.5616718374 -6.0322318439
+
+
+# name: local_points
+# type: matrix
+# rows: 3
+# columns: 2
+ 39.74 38.16
+ 30.95 42.56
+ 44.47 45.06
+
+
