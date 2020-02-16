@@ -195,7 +195,7 @@ public:
 		lnh.param("odom_y_bias", m_odomYBias, 0.05);
 		lnh.param("odom_z_bias", m_odomZBias, 0.05);
 		lnh.param("odom_a_bias", m_odomABias, 0.05);
-		
+
 		m_nUpdates = 0;
 		m_init = false;
 		m_doUpdate = false;
@@ -282,7 +282,7 @@ public:
 			return false;
 					
 		// Publish current TF from odom to map
-		m_tfBr.sendTransform(tf::StampedTransform(m_lastGlobalTf, ros::Time::now(), m_globalFrameId, m_odomFrameId));
+		m_tfBr.sendTransform(tf::StampedTransform(m_lastGlobalTf, ros::Time::now()+ros::Duration(0.1), m_globalFrameId, m_odomFrameId));
 		
 		// Compute odometric translation and rotation since last update 
 		tf::StampedTransform odomTf;
@@ -395,7 +395,7 @@ private:
 
 	void heightCallback(const std_msgs::Float64::ConstPtr& msg)
 	{
-		m_heightAboveTakeoff = msg->data;
+		m_heightAboveTakeoff = msg->data + m_initZOffset;
 	}
 
 	//! Range-only data callback
@@ -486,7 +486,7 @@ private:
 		}
 
 		if (m_heightAboveTakeoff > -1000.0) {
-			m_gps_map_point.point.z = m_heightAboveTakeoff + 0.5;
+			m_gps_map_point.point.z = m_heightAboveTakeoff;
 		}
 		m_gps_point_pub.publish(m_gps_map_point);
 	}
@@ -852,8 +852,6 @@ private:
 			}
 			newP[m] = m_p[i];
 			newP[m].w = factor;
-			if(m_heightAboveTakeoff > -1000.0)
-				newP[m].z = m_heightAboveTakeoff;
 		}
 		
 		//Asign the new particles set
