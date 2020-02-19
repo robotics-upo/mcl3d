@@ -282,13 +282,13 @@ public:
 			return false;
 					
 		// Publish current TF from odom to map
-		m_tfBr.sendTransform(tf::StampedTransform(m_lastGlobalTf, ros::Time::now()+ros::Duration(0.1), m_globalFrameId, m_odomFrameId));
+		m_tfBr.sendTransform(tf::StampedTransform(m_lastGlobalTf, ros::Time::now(), m_globalFrameId, m_odomFrameId));
 		
 		// Compute odometric translation and rotation since last update 
 		tf::StampedTransform odomTf;
 		try
 		{
-			m_tfListener.waitForTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), ros::Duration(1.0));
+			m_tfListener.waitForTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), ros::Duration(.0));
 			m_tfListener.lookupTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), odomTf);
 		}
 		catch (tf::TransformException ex)
@@ -468,20 +468,18 @@ private:
 		curr_gps_point.point.y = local[1];
 		curr_gps_point.point.z = local[2];
 		curr_gps_point.header.frame_id = m_gpsFrameId;
-		curr_gps_point.header.stamp = ros::Time(0);
+		curr_gps_point.header.stamp = msg->header.stamp - ros::Duration(0.1);
 
 		try
 		{
 			m_tfListener.waitForTransform(m_gpsFrameId, m_globalFrameId, ros::Time(0), ros::Duration(2.0));
 			m_tfListener.transformPoint(m_globalFrameId, curr_gps_point, m_gps_map_point);
 			ROS_INFO("Map Relative Position: [%.3f, %.3f]", m_gps_map_point.point.x, m_gps_map_point.point.y);
-			m_use_gps=true;
 			newGpsData = true;
 		}
 		catch (tf::TransformException ex)
 		{
 			ROS_ERROR("Update GPS. Could not transform from GPS to global frame. Content: %s", ex.what());
-			m_use_gps=false;
 			newGpsData =false;
 		}
 
@@ -612,8 +610,8 @@ private:
 			
 			float sa = sin(m_p[i].a);
 			float ca = cos(m_p[i].a);
-			float randX = delta_x + gsl_ran_gaussian(m_randomValue, xDev);
-			float randY = delta_y + gsl_ran_gaussian(m_randomValue, yDev);
+			float randX = delta_x + gsl_ran_gaussian(m_randomValue, std::max(xDev, yDev));
+			float randY = delta_y + gsl_ran_gaussian(m_randomValue, std::max(xDev, yDev));
 			m_p[i].x += ca*randX - sa*randY;
 			m_p[i].y += sa*randX + ca*randY;
 			m_p[i].z += delta_z + gsl_ran_gaussian(m_randomValue, zDev);
@@ -705,7 +703,7 @@ private:
 				m_p[i].wr = 0;
 
 			// Evaluate the weight of the gps
-			if (m_use_gps && newGpsData) {
+			if (m_use_gps) {
 				m_p[i].wgps = computeGPSWeight(m_p[i].x, m_p[i].y, m_p[i].z, m_gps_map_point);
 			}
 			else
@@ -747,7 +745,7 @@ private:
 		}
 		
 		// Re-compute global TF according to new weight of samples
-		// computeGlobalTfAndPose();
+		 computeGlobalTfAndPose();
 
 		//Do the resampling if needed
 		m_nUpdates++;
