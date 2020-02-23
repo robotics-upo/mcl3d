@@ -484,7 +484,7 @@ private:
 		}
 
 		if (m_heightAboveTakeoff > -1000.0) {
-			m_gps_map_point.point.z = m_heightAboveTakeoff + m_initZOffset;
+			m_gps_map_point.point.z = m_heightAboveTakeoff;
 		}
 		m_gps_point_pub.publish(m_gps_map_point);
 	}
@@ -851,7 +851,7 @@ private:
 			newP[m] = m_p[i];
 			newP[m].w = factor;
 			if (m_heightAboveTakeoff > -1000.0) {
-				newP[m].z = m_heightAboveTakeoff + gsl_ran_gaussian(m_randomValue, 1.0) + m_initZOffset;
+				newP[m].z = m_heightAboveTakeoff + gsl_ran_gaussian(m_randomValue, 1.0);
 			}
 		}
 		
