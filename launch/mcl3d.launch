@@ -3,51 +3,55 @@
 <launch>
   
   # Bag filename
-  <!-- <arg name="bag_file" /> -->
+ <arg name="bag_file" /> 
   
   # Use simulation time for TFs
-  <!-- <param name="use_sim_time" value="true" /> -->
+  <param name="use_sim_time" value="true" /> 
 
   # Bag file
-  <!-- <node name="bag_player" type="play" pkg="rosbag" args="$(arg bag_file) -s 0 -r 1.0 -l" /> -->
-  
-  <!-- <arg name="initial_x" default="14.8"/>
-  <arg name="initial_y" default="15"/>
-  <arg name="initial_z" default="0.25"/>
-  <arg name="initial_a" default="2.4"/> -->
+  <node name="bag_player" type="play" pkg="rosbag" args="$(arg bag_file) --clock -s 0 -r 1.0 -l" /> 
+
+  # Frames
+  <include file="$(find nix_launchers)/launch/frames.launch" />
+
   <arg name="base_frame_id" default="base_link"/>
   <arg name="odom_frame_id" default="odom"/>
   <arg name="global_frame_id" default="map"/>
-  <arg name="use_fiducial" default="true"/>
-   <!-- 15.860 1.773 0.000 3.126 Initial parameters tunel -->
-  <arg name="initial_x" default="17.86"/>
-  <arg name="initial_y" default="1.773"/>
+  <!--<arg name="initial_x" default="8.164"/>
+  <arg name="initial_y" default="15.250"/>
   <arg name="initial_z" default="0"/>
-  <arg name="initial_a" default="2.5"/>
-  <arg name="map" default="octomap_full.bt"/>
+  <arg name="initial_a" default="0.045"/> -->
+  <arg name="initial_x" default="6.23"/>
+  <arg name="initial_y" default="11.9"/>
+  <arg name="initial_z" default="0"/>
+  <arg name="initial_a" default="-1.54"/>
+  <arg name="map" default="basement_2.bt"/>
 
   # Launch MCL3D
   <node name="mcl3d_node" type="mcl3d_node" pkg="mcl3d" output="screen">
     <remap from="/mcl3d_node/initial_pose" to="/initialpose"/>
     <param name="rate" value="10.0" />
-    <param name="in_cloud" value="/os1_cloud_node/points" />
+    <param name="in_cloud" value="/os1_cloud_node/points_non_dense" />
     <param name="base_frame_id" value="$(arg base_frame_id)" />
     <param name="odom_frame_id" value="$(arg odom_frame_id)" />
     <param name="global_frame_id" value="$(arg global_frame_id)" />
 
-    <param name="map_path" value="$(env HOME)/3dmaps/$(arg map)" />
+    <param name="map_path" value="$(find mcl3d)/launch/$(arg map)" />
     <param name="publish_point_cloud" value="true" />
     <param name="sensor_dev" value="0.02" />
     <param name="cloud_voxel_size" value="0.05"/>
     <param name="publish_grid_slice" value="0.0"/>
     
-    <param name="min_particles" value="300" />
-    <param name="max_particles" value="500" />
+    <param name="particles" value="500" />
     
-    <param name="odom_x_mod" value="0.25" />
-    <param name="odom_y_mod" value="0.25" />
-    <param name="odom_z_mod" value="0.05" />
-    <param name="odom_a_mod" value="0.25" />
+    <param name="odom_x_mod" value="0.1" />
+    <param name="odom_y_mod" value="0.1" />
+    <param name="odom_z_mod" value="0.01" />
+    <param name="odom_a_mod" value="0.2" /> <!-- 0.2-->
+    <param name="odom_x_bias" value="0.01" />
+    <param name="odom_y_bias" value="0.01" />
+    <param name="odom_z_bias" value="0.005" />
+    <param name="odom_a_bias" value="0.02" /> <!-- 0.05-->
     
     <param name="resample_interval" value="0" />
     
@@ -60,19 +64,15 @@
     <param name="initial_a"   value="$(arg initial_a)"/>
 
 
-    <param name="initial_x_dev" value="0.1" />
-    <param name="initial_y_dev" value="0.1" />
-    <param name="initial_z_dev" value="0.2" />
-    <param name="initial_a_dev" value="0.05" />
-    <param name="initial_z_offset" value="0.5" />
-    
-    <param name="use_range_only" value="false" />
-    <param name="in_range" value="/localino_node/anchor/range" />
-    <param name="range_only_tag" value="0x1436393435260290" />
-    <param name="range_only_dev" value="0.1" />
+    <param name="initial_x_dev" value="0.2" />
+    <param name="initial_y_dev" value="0.2" />
+    <param name="initial_z_dev" value="0.05" />
+    <param name="initial_a_dev" value="0.2" />
+    <param name="initial_z_offset" value="0.04" />
 
-    <param name="use_fiducial" value="$(arg use_fiducial)"/>
- 
+    <param name="use_imu" value="false" />
+    <param name="use_2d_odom" value="false"/> 
+    
   </node>
 
 </launch>	
