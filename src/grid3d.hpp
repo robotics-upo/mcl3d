@@ -152,7 +152,8 @@ public:
 			const pcl::PointXYZ& p = points[i];
 			if(p.x >= 0.0 && p.y >= 0.0 && p.z >= 0.0 && p.x < m_maxX && p.y < m_maxY && p.z < m_maxZ)
 			{
-				weight += m_grid[point2grid(p.x, p.y, p.z)].prob;
+				int index = point2grid(p.x, p.y, p.z);
+				weight += m_grid[index].prob;
 				n++;
 			}
 		}
@@ -177,7 +178,7 @@ public:
 	
 	bool isIntoMap(float x, float y, float z)
 	{
-		return (x >= 0.0 && y >= 0.0 && z >= 0.0 && x <= m_maxX && y <= m_maxY && z <= m_maxZ);
+		return (x >= 0.0 && y >= 0.0 && z >= 0.0 && x < m_maxX && y < m_maxY && z < m_maxZ);
 	}
 
 protected:

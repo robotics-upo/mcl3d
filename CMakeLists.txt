@@ -8,16 +8,12 @@ set(CMAKE_CXX_STANDARD 11)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
-  image_transport
-  cmake_modules
   tf
   geometry_msgs
   pcl_conversions 
   pcl_ros
   octomap_ros
-  visualization_msgs
   nav_msgs
-  range_msgs
 )
 
 # GSL package
@@ -111,11 +107,6 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${gsl_INCLUDE_DIRS}
 )
-
-## Declare a cpp library
-# add_library(stereo_processing
-#   src/${PROJECT_NAME}/stereo_processing.cpp
-# )
 
 ## Declare a cpp executable
 add_executable(mcl3d_node src/mcl3d_node.cpp)
