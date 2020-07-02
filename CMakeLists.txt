@@ -110,17 +110,22 @@ include_directories(
 
 ## Declare a cpp executable
 add_executable(mcl3d_node src/mcl3d_node.cpp)
+add_executable(grid3d_node src/grid3d_node.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
 add_dependencies(mcl3d_node ${catkin_EXPORTED_TARGETS})
+add_dependencies(grid3d_node ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(mcl3d_node
    ${catkin_LIBRARIES}
    ${gsl_LIBRARIES}
 )
-
+target_link_libraries(grid3d_node
+   ${catkin_LIBRARIES}
+   ${gsl_LIBRARIES}
+)
 #############
 ## Install ##
 #############

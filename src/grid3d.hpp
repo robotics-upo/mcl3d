@@ -12,6 +12,7 @@
 #include <octomap/octomap.h>
 #include <octomap/OcTree.h>
 #include <nav_msgs/OccupancyGrid.h>
+#include <std_msgs/Float32.h>
 #include <stdio.h> 
 
 // PCL
@@ -58,7 +59,7 @@ private:
 	
 	// Visualization of the map as pointcloud
 	sensor_msgs::PointCloud2 m_pcMsg;
-	ros::Publisher m_pcPub;
+	ros::Publisher m_pcPub, percent_computed_pub_;
 	ros::Timer mapTimer;
 			
 	// Visualization of a grid slice as 2D grid map msg
@@ -131,7 +132,51 @@ public:
 				m_pcPub = m_nh.advertise<sensor_msgs::PointCloud2>(node_name+"/map_point_cloud", 1, true);
 				mapTimer = m_nh.createTimer(ros::Duration(1.0/m_publishPointCloudRate), &Grid3d::publishMapPointCloudTimer, this);
 			}
+			percent_computed_pub_ = m_nh.advertise<std_msgs::Float32>(node_name+"/percent_computed", 1, false);
 		}
+	}
+	Grid3d(std::string &node_name, std::string &map_path) : m_cloud(new pcl::PointCloud<pcl::PointXYZ>)
+	{
+	  
+		// Load paraeters
+		double value;
+		ros::NodeHandle lnh("~");
+		m_nodeName = node_name;
+
+		if(!lnh.getParam("sensor_dev", value))
+			value = 0.2;
+		m_sensorDev = (float)value;
+		m_mapPath = map_path;
+		// Load octomap 
+		m_octomap = NULL;
+		m_grid = NULL;
+		
+		percent_computed_pub_ = m_nh.advertise<std_msgs::Float32>(node_name+"/percent_computed", 1, false);
+
+		if(loadOctomap(m_mapPath))
+		{
+			// Compute the point-cloud associated to the ocotmap
+			computePointCloud();
+			
+			// Try to load tha associated grid-map from file
+			std::string path;
+			if(m_mapPath.compare(m_mapPath.length()-3, 3, ".bt") == 0)
+				path = m_mapPath.substr(0,m_mapPath.find(".bt"))+".grid";
+			if(m_mapPath.compare(m_mapPath.length()-3, 3, ".ot") == 0)
+				path = m_mapPath.substr(0,m_mapPath.find(".ot"))+".grid";
+			if(!loadGrid(path))
+			{						
+				// Compute the gridMap using kdtree search over the point-cloud
+				std::cout << "Computing 3D occupancy grid. This will take some time..." << std::endl;
+				computeGrid();
+				std::cout << "\tdone!" << std::endl;
+				
+				// Save grid on file
+				if(saveGrid(path))
+					std::cout << "Grid map successfully saved on " << path << std::endl;
+			}			
+		}
+		exit(0);
 	}
 
 	~Grid3d(void)
@@ -346,6 +391,9 @@ protected:
 	
 	void computeGrid(void)
 	{
+		//Publish percent variable
+		std_msgs::Float32 percent_msg;
+		percent_msg.data = 0;
 		// Alloc the 3D grid
 		m_gridSizeX = (int)(m_maxX*m_oneDivRes);
 		m_gridSizeY = (int)(m_maxY*m_oneDivRes); 
@@ -382,6 +430,11 @@ protected:
 					++count;
 					percent = count/size *100.0;
 					ROS_INFO_THROTTLE(0.5,"Progress: %lf %%", percent);	
+					if(percent > percent_msg.data + 0.5){
+						percent_msg.data = percent;
+						percent_computed_pub_.publish(percent_msg);
+					}
+					
 					if(m_kdtree.nearestKSearch(searchPoint, 1, pointIdxNKNSearch, pointNKNSquaredDistance) > 0)
 					{
 						dist = pointNKNSquaredDistance[0];
