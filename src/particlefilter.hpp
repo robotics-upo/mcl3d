@@ -628,7 +628,9 @@ private:
 		computeVar(mx, my, mz, ma, varx, vary, varz, vara);	
 
 		// Compute the TF from odom to global
-		m_lastGlobalTf = tf::Transform(tf::Quaternion(0.0, 0.0, sin(ma*0.5), cos(ma*0.5)), tf::Vector3(mx, my, mz))*m_lastOdomTf.inverse();
+		tf::Quaternion q;
+		q.setRPY(m_roll, m_pitch, ma);
+		m_lastGlobalTf = tf::Transform(q, tf::Vector3(mx, my, mz))*m_lastOdomTf.inverse();
 		tf::Vector3 t = m_lastGlobalTf.getOrigin();
 		double r, p, y;
 		m_lastGlobalTf.getBasis().getRPY(r, p, y);
