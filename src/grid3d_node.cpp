@@ -15,9 +15,6 @@ int main(int argc, char **argv)
 	std::string map_path = std::string(argv[1]);
 	Grid3d pf(node_name, map_path);
   
-	// Process data at given rate
-	ros::spin();
-
 	return 0;
 }
 

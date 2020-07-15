@@ -176,7 +176,6 @@ public:
 					std::cout << "Grid map successfully saved on " << path << std::endl;
 			}			
 		}
-		exit(0);
 	}
 
 	~Grid3d(void)
