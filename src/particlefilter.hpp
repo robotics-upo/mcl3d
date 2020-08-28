@@ -30,6 +30,8 @@
 #include <range_msgs/P2PRangeWithPose.h>
 #include "mcl3d/earthlocation.h"
 
+#include <fstream>
+
 using std::isnan;
 
 
@@ -191,6 +193,16 @@ public:
         if(!lnh.getParam("cloud_voxel_size", m_voxelSize))
             m_voxelSize = 0.05;  
 
+		// GPS status file
+		
+		lnh.param("gps_export_file", gps_export_file_name, static_cast<std::string>(""));
+		if (gps_export_file_name != "") {
+			ROS_INFO("Exporting GPS stats. Filename: %s", gps_export_file_name.c_str());
+			gps_export_file.open(gps_export_file_name, std::ios::out);
+		}
+		if (!lnh.getParam("gps_compare_frame_id", m_gpsCompareFrameId))
+			m_gpsCompareFrameId = m_baseFrameId;
+		// Odom BIAS
 		lnh.param("odom_x_bias", m_odomXBias, 0.05);
 		lnh.param("odom_y_bias", m_odomYBias, 0.05);
 		lnh.param("odom_z_bias", m_odomZBias, 0.05);
@@ -248,10 +260,7 @@ public:
 		// Initialize last pose
 		m_lastPose.header.frame_id = m_globalFrameId;
 		m_lastPose.header.seq = 0;
-		
-		// Borrar
-		pf = fopen("/home/fernando/catkin_ws/mcl3d.txt", "w");
-		
+			
 		if(m_initX != 0 || m_initY != 0 || m_initZ != 0 || m_initA != 0){
 			tf::Pose pose;
 			tf::Vector3 origin(m_initX, m_initY, m_initZ);
@@ -271,7 +280,7 @@ public:
 	~ParticleFilter()
 	{
 		gsl_rng_free(m_randomValue);
-		fclose(pf);
+	
 	}
 		
 	//! Check motion and time thresholds for AMCL update
@@ -444,8 +453,8 @@ private:
 	void gpsCallback(const sensor_msgs::NavSatFixConstPtr &msg)
 	{
 		// If the filter is not initialized then exit
-		if (!m_init)
-			return;
+		// if (!m_init)
+		// 	return;
 
 		float gps_dev = sqrt(msg->position_covariance[0]) * 1.5; // TODO: gps factor add to parameter list
 		gps_dev = std::max(m_gps_dev, gps_dev);
@@ -468,18 +477,27 @@ private:
 		curr_gps_point.point.y = local[1];
 		curr_gps_point.point.z = local[2];
 		curr_gps_point.header.frame_id = m_gpsFrameId;
-		curr_gps_point.header.stamp = msg->header.stamp - ros::Duration(0.1);
+		curr_gps_point.header.stamp = msg->header.stamp;
+
+		geometry_msgs::PointStamped curr_gps_compare_point;
+		curr_gps_compare_point.point.x = 0;
+		curr_gps_compare_point.point.y = 0;
+		curr_gps_compare_point.point.z = 0;
+		curr_gps_compare_point.header.frame_id = m_gpsCompareFrameId;
+		curr_gps_compare_point.header.stamp = ros::Time(0);
 
 		try
 		{
-			m_tfListener.waitForTransform(m_gpsFrameId, m_globalFrameId, ros::Time(0), ros::Duration(2.0));
+			m_tfListener.waitForTransform(m_gpsFrameId, m_globalFrameId, ros::Time(0), ros::Duration(0.5));
 			m_tfListener.transformPoint(m_globalFrameId, curr_gps_point, m_gps_map_point);
+			m_tfListener.waitForTransform(m_gpsCompareFrameId, m_globalFrameId, ros::Time(0), ros::Duration(0.5));
+			m_tfListener.transformPoint(m_globalFrameId, curr_gps_compare_point, curr_gps_compare_point);
 			ROS_INFO("Map Relative Position: [%.3f, %.3f]", m_gps_map_point.point.x, m_gps_map_point.point.y);
 			newGpsData = true;
 		}
 		catch (tf::TransformException ex)
 		{
-			ROS_ERROR("Update GPS. Could not transform from GPS to global frame. Content: %s", ex.what());
+			ROS_ERROR("GPS Callback. Could not transform from GPS to global frame. Content: %s", ex.what());
 			newGpsData =false;
 		}
 
@@ -487,6 +505,23 @@ private:
 			m_gps_map_point.point.z = m_heightAboveTakeoff;
 		}
 		m_gps_point_pub.publish(m_gps_map_point);
+
+		// Export GPS coords and local coords for reporting
+		gps_export_file.precision(15);
+		if ( gps_export_file_name != "" ) {
+			
+			gps_export_file << static_cast<double>(msg->header.stamp.sec) + 1e-9 * static_cast<double>(msg->header.stamp.nsec) << "\t";
+			gps_export_file << m_gps_map_point.point.x << "\t";
+			gps_export_file << m_gps_map_point.point.y << "\t";
+			gps_export_file << m_gps_map_point.point.z << "\t";
+			gps_export_file << "\t\t";
+			gps_export_file << curr_gps_compare_point.point.x << "\t";
+			gps_export_file << curr_gps_compare_point.point.y << "\t";
+			gps_export_file << curr_gps_compare_point.point.z << "\t";
+			gps_export_file << "\t\t";
+			gps_export_file << msg->longitude << "\t";
+			gps_export_file << msg->latitude << "\n";
+		}
 	}
 
 
@@ -1133,12 +1168,14 @@ private:
 	//! Random number generator
 	const gsl_rng_type *m_randomType;
 	gsl_rng *m_randomValue;
+
+	// GPS stats file
+	std::string gps_export_file_name, m_gpsCompareFrameId;
+	std::ofstream gps_export_file;
 	
 	//! Probability grid for point-cloud evaluation
 	Grid3d m_grid3d;
 	
-	//!Borrar
-	FILE *pf;
 };
 
 #endif
