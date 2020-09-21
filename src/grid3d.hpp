@@ -449,6 +449,8 @@ protected:
 				}
 			}
 		}
+		percent_msg.data = 100;
+		percent_computed_pub_.publish(percent_msg);
 	}
 	
 	void buildGridSliceMsg(float z)
