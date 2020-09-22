@@ -66,6 +66,10 @@ private:
 	nav_msgs::OccupancyGrid m_gridSliceMsg;
 	ros::Publisher m_gridSlicePub;
 	ros::Timer gridTimer;
+
+	//Parameters added to allow a new exp function to test different gridmaps
+	double cost_scaling_factor, robot_radius;
+	bool use_costmap_function;
 	
 public:
 	Grid3d(std::string &node_name) : m_cloud(new pcl::PointCloud<pcl::PointXYZ>)
@@ -91,7 +95,11 @@ public:
 		if(!lnh.getParam("sensor_dev", value))
 			value = 0.2;
 		m_sensorDev = (float)value;
-		
+
+		lnh.param("cost_scaling_factor", cost_scaling_factor, 0.8);		
+		lnh.param("robot_radius", robot_radius, 0.4);		
+		lnh.param("use_costmap_function", use_costmap_function, (bool)false);		
+
 		// Load octomap 
 		m_octomap = NULL;
 		m_grid = NULL;
@@ -206,6 +214,18 @@ public:
 			return weight/n;
 		else
 			return 0;
+	}
+	
+	double getProbabilityFromPoint(const double &px, const double &py, const double &pz){
+
+		double weight = 0;
+		if(px >= 0.0 && py >= 0.0 && pz >= 0.0 && px < m_maxX && py < m_maxY && pz < m_maxZ)
+		{
+			int index = point2grid(px, py, pz);
+			weight = m_grid[index].prob;
+		}
+
+	return weight;
 	}
   
 	void publishMapPointCloud(void)
@@ -438,7 +458,11 @@ protected:
 					{
 						dist = pointNKNSquaredDistance[0];
 						m_grid[index].dist = dist;
-						m_grid[index].prob = gaussConst1*exp(-dist*dist*gaussConst2);
+						if(!use_costmap_function){
+							m_grid[index].prob = gaussConst1*exp(-dist*dist*gaussConst2);
+						}else{
+							m_grid[index].prob = (253-1)*exp(-cost_scaling_factor*(dist - robot_radius));
+						}
 					}
 					else
 					{
