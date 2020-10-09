@@ -344,7 +344,6 @@ private:
 		// Get roll and pitch from odom if no IMU available
 		if(!m_use_imu)
 			odomTf.getBasis().getRPY(m_roll, m_pitch, m_yaw);
-		
 		// Perform particle prediction based on odometry
 		float delta_x, delta_y, delta_z;
 		double delta_r, delta_p, delta_a;
@@ -380,31 +379,46 @@ private:
 	//!in meters and yaw angle incremenet in rad
 	bool predict(float delta_x, float delta_y, float delta_z, float delta_a)
 	{
-		if(m_use_2d_odom) { // Adapt the 2d odometry according to the IMU measurements
-			float cr, sr, cp, sp, cy, sy, rx, ry; 
-			float r00, r01, r02, r10, r11, r12, r20, r21, r22;
-			sr = sin(m_roll);
-			cr = cos(m_roll);
-			sp = sin(m_pitch);
-			cp = cos(m_pitch);
-			r00 = cp; 	r01 = sp*sr; 	
-			r10 =  0; 	r11 = cr;		
-			r20 = -sp;	r21 = cp*sr;	
-			delta_z = delta_x*r20 + delta_y*r21;
-			delta_x = delta_x*r00 + delta_y*r01;
-			delta_y = delta_y*r11;
-		}
-			
+		float temp_dx = delta_x;
+		float temp_dy = delta_y;
+		float temp_dz = delta_z;
+		// if(m_use_2d_odom) { // Adapt the 2d odometry according to the IMU measurements
+			// float cr, sr, cp, sp, cy, sy, rx, ry; 
+			// float r00, r01, r02, r10, r11, r12, r20, r21, r22;
+			// sr = sin(m_roll);
+			// cr = cos(m_roll);
+			// sp = sin(m_pitch);
+			// cp = cos(m_pitch);
+			// r00 = cp; 	r01 = sp*sr; 	
+			// r10 =  0; 	r11 = cr;		
+			// r20 = -sp;	r21 = cp*sr;	
+			// delta_z = delta_x*r20 + delta_y*r21;
+			// delta_x = delta_x*r00 + delta_y*r01;
+			// delta_y = delta_y*r11;
+
+		float cr, sr, cp, sp, cy, sy, rx, ry;
+		float r00, r01, r02, r10, r11, r12, r20, r21, r22;
+		sr = sin(m_roll);
+		cr = cos(m_roll);
+		sp = sin(m_pitch);
+		cp = cos(m_pitch);
+		r00 = cp; 	r01 = sp*sr; 	r02 = cr*sp;
+		r10 =  0; 	r11 = cr;		r12 = -sr;
+		r20 = -sp;	r21 = cp*sr;	r22 = cp*cr;
+		// }
+		delta_x = r00 * temp_dx + r01 * temp_dy + r02 * temp_dz; 
+		delta_y = r10 * temp_dx + r11 * temp_dy + r12 * temp_dz;
+		delta_z = r20 * temp_dx + r21 * temp_dy + r22 * temp_dz;
+
 		float xDev, yDev, zDev, aDev;
 		xDev = fabs(delta_x*m_odomXMod) + m_odomXBias;
 		yDev = fabs(delta_y*m_odomYMod) + m_odomYBias;
 		zDev = fabs(delta_z*m_odomZMod) + m_odomZBias;
 		aDev = fabs(delta_a*m_odomAMod) + m_odomABias;
-		
+//		ROS_INFO("Odom Z: %f,Last Z: %f, Delta X: %f, Delta Y: %f, Delta Z: %f",odomTf.getOrigin.getZ(), m_lastOdomTf.getOrigin().getZ(), delta_x, delta_y, delta_z);
 		//Make a prediction for all particles according to the odometry
 		for(int i=0; i<(int)m_p.size(); i++)
 		{
-			
 			float sa = sin(m_p[i].a);
 			float ca = cos(m_p[i].a);
 			float randX = delta_x + gsl_ran_gaussian(m_randomValue, std::max(xDev, yDev));
