@@ -271,8 +271,6 @@ public:
 			pose.setRotation(q);
 			
 			setInitialPose(pose, m_initXDev, m_initYDev, m_initZDev, m_initADev);
-			m_init = true;
-			
 		}
 	}
 
@@ -379,7 +377,6 @@ private:
 		// Transform into the global frame
 		tf::Pose pose;
 		tf::poseMsgToTF(msg->pose.pose, pose);
-		ROS_INFO("Setting pose (%.6f): %.3f %.3f %.3f %.3f", ros::Time::now().toSec(), pose.getOrigin().x(), pose.getOrigin().y(), pose.getOrigin().z(), getYawFromTf(pose));
 		
 		// Initialize the filter
 		setInitialPose(pose, m_initXDev, m_initYDev, m_initZDev, m_initADev);
@@ -796,6 +793,9 @@ private:
 	//! Set the initial pose of the particle filter
 	void setInitialPose(tf::Pose initPose, float xDev, float yDev, float zDev, float aDev)
 	{
+		tf::Pose &pose = initPose;
+		ROS_INFO("Setting pose (%.6f): %.3f %.3f %.3f %.3f", ros::Time::now().toSec(), pose.getOrigin().x(), pose.getOrigin().y(), pose.getOrigin().z(), getYawFromTf(pose));
+
 		// Resize particle set
 		m_p.resize(m_maxParticles);
 		
@@ -829,16 +829,21 @@ private:
 			m_p[i].w /= wt;
 				
 		// Extract TFs for future updates
-		try
-		{
-			m_tfListener.waitForTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), ros::Duration(1.0));
-			m_tfListener.lookupTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), m_lastOdomTf);
+		bool got_tf = false;
+		while (!got_tf && ros::ok()) {
+			try
+			{
+				m_tfListener.waitForTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), ros::Duration(1.0));
+				m_tfListener.lookupTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), m_lastOdomTf);
+				got_tf = true;
+			}
+			catch (tf::TransformException ex)
+			{
+				ROS_ERROR("%s",ex.what());
+			}
 		}
-		catch (tf::TransformException ex)
-		{
-			ROS_ERROR("%s",ex.what());
+		if (!got_tf)
 			return;
-		}
 		computeGlobalTfAndPose();
 		m_doUpdate = false;
 		m_init = true;
