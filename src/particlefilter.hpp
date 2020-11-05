@@ -138,7 +138,7 @@ public:
 
 		// Launch publishers
 		m_posesPub = lnh.advertise<geometry_msgs::PoseArray>("particle_cloud", 1, true);
-		//m_pcPub = lnh.advertise<sensor_msgs::PointCloud2>("/cloud", 1, true);
+		m_pose_cov_pub = lnh.advertise<geometry_msgs::PoseWithCovarianceStamped>("pose", 1);
 
 		// Launch updater timer
 		updateTimer = m_nh.createTimer(ros::Duration(1.0/m_updateRate), &ParticleFilter::checkUpdateThresholdsTimer, this);
@@ -660,6 +660,27 @@ private:
 		double r, p, y;
 		m_lastGlobalTf.getBasis().getRPY(r, p, y);
 		ROS_INFO("\tNew TF. tx: %f, ty: %f, tz: %f, a: %f",t.x(), t.y(), t.z(), y);
+
+
+		m_lastPose.pose.pose.position.x = mx;
+		m_lastPose.pose.pose.position.y = my;
+		m_lastPose.pose.pose.position.z = mz;
+		m_lastPose.pose.pose.orientation.x = q.x();
+		m_lastPose.pose.pose.orientation.y = q.y();
+		m_lastPose.pose.pose.orientation.z = q.z();
+		m_lastPose.pose.pose.orientation.w = q.w();
+
+		for (size_t i = 0; i < 36; i++)
+			m_lastPose.pose.covariance[i] = 0.0;
+
+		m_lastPose.pose.covariance[0] = varx;
+		m_lastPose.pose.covariance[7] = vary;
+		m_lastPose.pose.covariance[14] = varz;
+		m_lastPose.pose.covariance[35] = vara;
+
+		m_lastPose.header.stamp = ros::Time::now();
+		m_lastPose.header.frame_id = m_globalFrameId;
+		m_pose_cov_pub.publish(m_lastPose);
 	}
 	
 	void computeDev(float &mX, float &mY, float &mZ, float &mA, float &devX, float &devY, float &devZ, float &devA)
@@ -745,6 +766,7 @@ private:
 	double m_dTh, m_aTh;
 	tf::StampedTransform m_lastOdomTf;
 	tf::Transform m_lastGlobalTf;
+	geometry_msgs::PoseWithCovarianceStamped m_lastPose;
 	bool m_doUpdate;
 	double m_updateRate;
 		
@@ -759,7 +781,7 @@ private:
 	tf::TransformBroadcaster m_tfBr;
 	tf::TransformListener m_tfListener;
     ros::Subscriber m_pcSub, m_initialPoseSub, m_odomTfSub, m_imuSub;
-	ros::Publisher m_posesPub, m_pcPub;
+	ros::Publisher m_posesPub, m_pcPub, m_pose_cov_pub;
 	ros::Timer updateTimer;
 		
 	//! Random number generator
