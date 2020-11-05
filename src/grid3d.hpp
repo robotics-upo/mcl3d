@@ -95,6 +95,9 @@ public:
 		// Load octomap 
 		m_octomap = NULL;
 		m_grid = NULL;
+
+		percent_computed_pub_ = m_nh.advertise<std_msgs::Float32>(node_name+"/percent_computed", 1, false);
+
 		if(loadOctomap(m_mapPath))
 		{
 			// Compute the point-cloud associated to the ocotmap
@@ -132,7 +135,7 @@ public:
 				m_pcPub = m_nh.advertise<sensor_msgs::PointCloud2>(node_name+"/map_point_cloud", 1, true);
 				mapTimer = m_nh.createTimer(ros::Duration(1.0/m_publishPointCloudRate), &Grid3d::publishMapPointCloudTimer, this);
 			}
-			percent_computed_pub_ = m_nh.advertise<std_msgs::Float32>(node_name+"/percent_computed", 1, false);
+			
 		}
 	}
 	Grid3d(std::string &node_name, std::string &map_path) : m_cloud(new pcl::PointCloud<pcl::PointXYZ>)
