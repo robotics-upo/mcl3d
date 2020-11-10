@@ -205,10 +205,22 @@ public:
 			}
 		}
 
-		if(n > 10)
+		if(n > 0)
 			return weight/n;
 		else
 			return 0;
+	}
+
+	float computeValidityParticle(float x, float y, float z) {
+		float weight = 0.;
+		static const float gaussConst1 = 1./(m_sensorDev*sqrt(2*M_PI));
+		if (isIntoMap(x,y,z))
+			{
+				int index = point2grid(x, y, z);
+				weight = 1 - m_grid[index].prob / gaussConst1;
+				
+			}
+		return weight;
 	}
   
 	void publishMapPointCloud(void)
