@@ -510,7 +510,8 @@ private:
 			}
 			
 			// Evaluate the weight of the point-cloud
-			m_p[i].w = m_grid3d.computeCloudWeight(new_points);
+			m_p[i].w = m_grid3d.computeCloudWeight(new_points); 
+			m_p[i].w *= m_grid3d.computeValidityParticle(tx, ty, tz); // New --> do not let the particles to cross obstacles!!!!
 				
 			//Increase the summatory of weights
 			wt += m_p[i].w;
