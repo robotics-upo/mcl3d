@@ -262,6 +262,7 @@ public:
 		m_lastPose.header.seq = 0;
 			
 		if(m_initX != 0 || m_initY != 0 || m_initZ != 0 || m_initA != 0){
+			ROS_INFO("Setting initial pose: x = %f\t y=%f\t a=%f", m_initX, m_initY, m_initA);
 			tf::Pose pose;
 			tf::Vector3 origin(m_initX, m_initY, m_initZ);
 			tf::Quaternion q;
@@ -271,7 +272,7 @@ public:
 			pose.setRotation(q);
 			
 			setInitialPose(pose, m_initXDev, m_initYDev, m_initZDev, m_initADev);
-			m_init = true;
+			// m_init = true; This is done in setInitialPose
 			
 		}
 	}
@@ -829,16 +830,22 @@ private:
 			m_p[i].w /= wt;
 				
 		// Extract TFs for future updates
-		try
-		{
-			m_tfListener.waitForTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), ros::Duration(1.0));
-			m_tfListener.lookupTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), m_lastOdomTf);
+		bool got_tf = false;
+		while (!got_tf && ros::ok()) {
+			try
+			{
+				m_tfListener.waitForTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), ros::Duration(1.0));
+				m_tfListener.lookupTransform(m_odomFrameId, m_baseFrameId, ros::Time(0), m_lastOdomTf);
+				got_tf = true;
+			}
+			catch (tf::TransformException ex)
+			{
+				ROS_ERROR("%s",ex.what());
+				// return;
+			}
 		}
-		catch (tf::TransformException ex)
-		{
-			ROS_ERROR("%s",ex.what());
+		if (!got_tf)
 			return;
-		}
 		computeGlobalTfAndPose();
 		m_doUpdate = false;
 		m_init = true;
