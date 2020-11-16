@@ -272,8 +272,6 @@ public:
 			pose.setRotation(q);
 			
 			setInitialPose(pose, m_initXDev, m_initYDev, m_initZDev, m_initADev);
-			// m_init = true; This is done in setInitialPose
-			
 		}
 	}
 
@@ -380,7 +378,6 @@ private:
 		// Transform into the global frame
 		tf::Pose pose;
 		tf::poseMsgToTF(msg->pose.pose, pose);
-		ROS_INFO("Setting pose (%.6f): %.3f %.3f %.3f %.3f", ros::Time::now().toSec(), pose.getOrigin().x(), pose.getOrigin().y(), pose.getOrigin().z(), getYawFromTf(pose));
 		
 		// Initialize the filter
 		setInitialPose(pose, m_initXDev, m_initYDev, m_initZDev, m_initADev);
@@ -797,6 +794,9 @@ private:
 	//! Set the initial pose of the particle filter
 	void setInitialPose(tf::Pose initPose, float xDev, float yDev, float zDev, float aDev)
 	{
+		tf::Pose &pose = initPose;
+		ROS_INFO("Setting pose (%.6f): %.3f %.3f %.3f %.3f", ros::Time::now().toSec(), pose.getOrigin().x(), pose.getOrigin().y(), pose.getOrigin().z(), getYawFromTf(pose));
+
 		// Resize particle set
 		m_p.resize(m_maxParticles);
 		
@@ -841,7 +841,6 @@ private:
 			catch (tf::TransformException ex)
 			{
 				ROS_ERROR("%s",ex.what());
-				// return;
 			}
 		}
 		if (!got_tf)
