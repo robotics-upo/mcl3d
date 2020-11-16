@@ -99,6 +99,8 @@ public:
 		lnh.param("cost_scaling_factor", cost_scaling_factor, 0.8);		
 		lnh.param("robot_radius", robot_radius, 0.4);		
 		lnh.param("use_costmap_function", use_costmap_function, (bool)false);		
+		ROS_INFO("Cost Scaling Factor: %.2f", cost_scaling_factor);
+		ROS_INFO("Robot Radius: %.2f", robot_radius);
 
 		// Load octomap 
 		m_octomap = NULL;
